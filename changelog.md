@@ -2,6 +2,9 @@
 Формат: дата · чат · что изменено · вошло ли в Project Knowledge (PK).
 Новые записи — сверху.
 
+## 2026-10-01 · Claude Code · Инструкция запуска на Windows
+- `docs/SETUP_WINDOWS.md`: установка Node.js и Git, клонирование, запуск, перенос прогресса, обновления, частые проблемы.
+
 ## 2026-10-01 · Claude Code · Запуск в браузере (Vite)
 - Vite 8 + React 18 + lucide-react; Tailwind v3 локально (PostCSS), а не CDN: работает офлайн, совпадает с версией артефактов.
 - Шрифты Figtree и IBM Plex Mono из Google Fonts в `index.html`; `storage-shim.js` подключается до App.

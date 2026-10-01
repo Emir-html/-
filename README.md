@@ -4,7 +4,7 @@
 
 ## Запуск на своём компьютере
 
-Нужны Node.js 20+ и git.
+Нужны Node.js 20+ и git. Пошагово для Windows — [docs/SETUP_WINDOWS.md](docs/SETUP_WINDOWS.md).
 
 ```bash
 git clone https://github.com/Emir-html/-.git mirstudy
