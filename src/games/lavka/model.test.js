@@ -504,3 +504,62 @@ test("экзамен: прерванная попытка тоже сдвига�
   const w = (s) => L.lavkaWeekday(L.lavkaExamDayState(s, s.examActive, 0).day);
   assert.notEqual(w(a), w(b));
 });
+
+/* ===== «Вопрос дня» из уроков MirStudy ===== */
+
+const fakeBank = {
+  tests: [
+    { id: "t1", topic: "s-equilibrium", q: "Спрос складывается по горизонтали.", a: true, why: "Да." },
+    { id: "t9", topic: "mk-gdp", q: "ВВП — запас.", a: false, why: "Поток." },
+    { id: "t5", topic: "i-tax", q: "Налог на продавца платит только продавец.", a: false, why: "Делится." },
+  ],
+  hard: [
+    { th: "micro", q: "Аккордный налог на монополиста. Выпуск?", opts: ["сократится", "вырастет", "не изменится"], a: 2, why: "Постоянные." },
+    { th: "macro", q: "Инфляция?", opts: ["a", "b"], a: 0, why: "-" },
+  ],
+  cards: [
+    { id: "c1", topic: "e-basic", topicLabel: "Эластичность", front: "Что такое эластичность?", back: "Отношение процентных изменений." },
+    { id: "c2", topic: "e-properties", topicLabel: "Эластичность", front: "Когда выручка максимальна?", back: "При |E| = 1." },
+    { id: "c3", topic: "s-monopoly", topicLabel: "Монополия", front: "Условие оптимума монополиста?", back: "MR = MC." },
+    { id: "c4", topic: "i-price-controls", topicLabel: "Потолок", front: "Потолок у монополиста?", back: "Может увеличить объём." },
+    { id: "c5", topic: "mk-gdp", topicLabel: "ВВП", front: "Что такое ВВП?", back: "Рыночная стоимость конечных благ." },
+  ],
+};
+
+test("банк уроков: тесты, вопросы с вариантами и карточки приводятся к единому виду, макро не попадает", () => {
+  const items = L.lavkaStudyItems(fakeBank);
+  const ids = items.map((x) => x.id);
+  assert.ok(ids.includes("test:t1") && ids.includes("card:c1") && ids.some((x) => x.startsWith("hard:")));
+  assert.ok(!ids.includes("test:t9") && !ids.includes("card:c5"), "ВВП — не тема «Лавки»");
+  assert.equal(items.filter((x) => x.id.startsWith("hard:")).length, 1, "только микро");
+  for (const it of items) { assert.ok(it.a >= 0 && it.a < it.opts.length, it.id); assert.ok(it.chapter >= 1 && it.chapter <= 3); }
+  const t1 = items.find((x) => x.id === "test:t1");
+  assert.deepEqual(t1.opts, ["Верно", "Неверно"]); assert.equal(t1.a, 0);
+  const c3 = items.find((x) => x.id === "card:c3");
+  assert.equal(c3.opts[c3.a], "MR = MC."); assert.equal(new Set(c3.opts).size, c3.opts.length);
+  assert.equal(items.find((x) => x.id === "test:t5").chapter, 2);
+  assert.equal(items.find((x) => x.id === "card:c4").chapter, 3);
+});
+
+test("выбор вопроса: детерминирован по дню, только открытые главы, без повторов, слабые темы чаще", () => {
+  const items = L.lavkaStudyItems(fakeBank);
+  const a = L.lavkaPickQuiz(items, { day: 5, chapter: 1, seen: [], weak: [] });
+  assert.equal(a.id, L.lavkaPickQuiz(items, { day: 5, chapter: 1, seen: [], weak: [] }).id);
+  for (let d = 1; d < 40; d++) assert.equal(L.lavkaPickQuiz(items, { day: d, chapter: 1, seen: [], weak: [] }).chapter, 1);
+  const seen = items.filter((x) => x.chapter === 1).map((x) => x.id).slice(1);
+  const left = items.filter((x) => x.chapter === 1).map((x) => x.id)[0];
+  assert.equal(L.lavkaPickQuiz(items, { day: 9, chapter: 1, seen, weak: [] }).id, left);
+  let weakHits = 0, base = 0;
+  for (let d = 1; d < 400; d++) {
+    if (L.lavkaPickQuiz(items, { day: d, chapter: 3, seen: [], weak: ["s-monopoly"] }).topic === "s-monopoly") weakHits++;
+    if (L.lavkaPickQuiz(items, { day: d, chapter: 3, seen: [], weak: [] }).topic === "s-monopoly") base++;
+  }
+  assert.ok(weakHits > base * 1.8, `слабая тема: ${weakHits} против ${base}`);
+  assert.equal(L.lavkaPickQuiz([], { day: 3, chapter: 1, seen: [], weak: [] }).id.startsWith("lavka:"), true, "пустой банк → свои задачи");
+});
+
+test("слабые темы из прогресса SM-2 (только чтение)", () => {
+  const now = Date.UTC(2026, 9, 1);
+  const weak = L.lavkaWeakTopics(fakeBank.cards, { c1: { ease: 1.6, due: now + 1e9 }, c2: { ease: 2.6, due: now - 1 }, c3: { ease: 2.6, due: now + 1e9 } }, { c4: { at: 1, topic: "i-price-controls" } }, now);
+  assert.deepEqual(weak.sort(), ["e-basic", "e-properties", "i-price-controls"]);
+});

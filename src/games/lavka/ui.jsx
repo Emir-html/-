@@ -8,7 +8,7 @@ import {
   LAVKA_PRODUCTS, LAVKA_POINTS, LAVKA_CAPACITY, LAVKA_HELPER_CAP, LAVKA_HELPER_WAGE, LAVKA_FRIDGE_KEEP,
   LAVKA_WEEKDAYS, LAVKA_UPGRADES, LAVKA_EVENTS, LAVKA_GOALS, LAVKA_QUIZ, LAVKA_MONO,
   lavkaWeekday, lavkaUnlocked, lavkaOpenPoints, lavkaNewState, lavkaParams, lavkaSimulate, lavkaFit, lavkaFmt, lavkaRub,
-  lavkaVerdict, lavkaLoad, lavkaShownLambda,
+  lavkaVerdict, lavkaLoad, lavkaShownLambda, lavkaStudyItems, lavkaPickQuiz, lavkaWeakTopics,
   LAVKA_CHAPTERS, LAVKA_ORACLE_DAYS, lavkaChapterOf, lavkaUpgradeOpen,
   LAVKA_MEDALS, LAVKA_EXAM_FROM_DAY, lavkaExamOpen, lavkaExamMedal, lavkaExamDayState, lavkaExamNew, lavkaExamPlayDay,
   lavkaExamEfficiency, lavkaExamFinish, lavkaExamResult, lavkaExamStart,
@@ -97,17 +97,16 @@ function LavkaEventCard({ st }) {
   );
 }
 
-function LavkaQuizCard({ st, onAnswer }) {
+function LavkaQuizCard({ st, item, onAnswer }) {
   const [picked, setPicked] = useState(null);
-  const idx = ((st.day - 1) * 7) % LAVKA_QUIZ.length;
-  const item = LAVKA_QUIZ[idx];
-  /* Порядок вариантов перемешан детерминированно по дню, чтобы верный не стоял всегда вторым. */
-  const order = item.opts.map((_, i) => i).sort((a, b) => ((a * 7 + st.day * 3) % 5) - ((b * 7 + st.day * 3) % 5));
+  /* Порядок вариантов перемешан детерминированно по дню (кроме «Верно / Неверно»), чтобы верный не стоял на одном месте. */
+  const order = item.opts.length <= 2 ? item.opts.map((_, i) => i)
+    : item.opts.map((_, i) => i).sort((a, b) => ((a * 7 + st.day * 3) % 5) - ((b * 7 + st.day * 3) % 5));
   const answered = st.quiz?.lastDay === st.day;
   if (answered && picked == null) return null;
   return (
     <LavkaCard tint={COLORS.blueSoft}>
-      <p className="text-xs" style={{ color: COLORS.inkSoft }}>Вопрос дня · +400 ₽ за верный ответ</p>
+      <p className="text-xs" style={{ color: COLORS.inkSoft }}>Вопрос дня · +400 ₽ за верный ответ · {item.src}</p>
       <p className="text-sm font-semibold mt-1">{item.q}</p>
       <div className="flex flex-col gap-1.5 mt-3">
         {order.map((i) => {
@@ -115,7 +114,7 @@ function LavkaQuizCard({ st, onAnswer }) {
           const bg = picked == null ? COLORS.surfaceSolid : isRight ? COLORS.sageSoft : isPicked ? COLORS.rustSoft : COLORS.surfaceSolid;
           const bd = picked == null ? COLORS.line : isRight ? COLORS.sage : isPicked ? COLORS.rust : COLORS.line;
           return (
-            <button key={i} disabled={picked != null} onClick={() => { setPicked(i); onAnswer(i === item.a); }}
+            <button key={i} disabled={picked != null} onClick={() => { setPicked(i); onAnswer(i === item.a, item.id); }}
               className="text-left text-sm px-3.5 py-2 rounded-xl" style={{ background: bg, border: `1px solid ${bd}`, color: COLORS.ink }}>
               {item.opts[i]}
             </button>
@@ -124,7 +123,7 @@ function LavkaQuizCard({ st, onAnswer }) {
       </div>
       {picked != null && (
         <p className="text-sm mt-3 leading-relaxed" style={{ color: COLORS.ink }}>
-          {picked === item.a ? "✅ Верно. " : "Не совсем. "}{item.why}
+          {picked === item.a ? "✅ " : "❌ "}{/^(не)?верно/i.test(item.why || "") ? "" : picked === item.a ? "Верно. " : "Не совсем. "}{item.why}
         </p>
       )}
     </LavkaCard>
@@ -613,7 +612,7 @@ function LavkaExam({ st, update }) {
   );
 }
 
-function LavkaScreen({ onBack, theme, onToggleTheme }) {
+function LavkaScreen({ onBack, theme, onToggleTheme, studyBank }) {
   const [st, setSt] = useState(null);
   const [tab, setTab] = useState("shop");
   const [point, setPoint] = useState("main");
@@ -641,6 +640,16 @@ function LavkaScreen({ onBack, theme, onToggleTheme }) {
       setSt(lavkaLoad(raw));
     })();
   }, []);
+
+  /* «Вопрос дня» из уроков: банк передаёт приложение, слабые темы — из прогресса SM-2 (только чтение). */
+  const studyItems = useMemo(() => lavkaStudyItems(studyBank || {}), [studyBank]);
+  const [weak, setWeak] = useState([]);
+  useEffect(() => {
+    (async () => {
+      const read = async (k) => { try { const r = await window.storage.get(k); return r ? JSON.parse(r.value) : {}; } catch (e) { return {}; } };
+      setWeak(lavkaWeakTopics((studyBank && studyBank.cards) || [], await read("review-state"), await read("struggling-cards")));
+    })();
+  }, [studyBank]);
 
   const save = (s) => { window.storage.set("lavka-save", JSON.stringify({ ...s, at: Date.now() }), false).catch(() => {}); };
   const update = (fn, persist = true) => setSt((prev) => { const n = fn(prev); if (persist) save(n); return n; });
@@ -672,13 +681,13 @@ function LavkaScreen({ onBack, theme, onToggleTheme }) {
     flash(`${u.emoji} ${u.title}. ${u.lesson}`);
   };
 
-  const answerQuiz = (ok) => {
+  const answerQuiz = (ok, id) => {
     const right = (st.quiz?.right || 0) + (ok ? 1 : 0);
     const goal = right >= 10 && !st.goals.quiz10;
     const bonus = (ok ? 400 : 0) + (goal ? LAVKA_GOALS.find((g) => g.id === "quiz10").reward : 0);
     update((s) => ({
       ...s, cash: s.cash + bonus,
-      quiz: { lastDay: s.day, right, total: (s.quiz?.total || 0) + 1 },
+      quiz: { lastDay: s.day, right, total: (s.quiz?.total || 0) + 1, seen: [...(s.quiz?.seen || []), id].slice(-30) },
       goals: goal ? { ...s.goals, quiz10: s.day } : s.goals,
     }));
     if (goal) flash("🎓 Цель выполнена: Экономист у прилавка (+2 000 ₽)");
@@ -756,7 +765,12 @@ function LavkaScreen({ onBack, theme, onToggleTheme }) {
               </LavkaCard>
             )}
             <LavkaEventCard st={st} />
-            {st.day > 1 && <LavkaQuizCard key={st.day} st={st} onAnswer={answerQuiz} />}
+            {st.day > 1 && (() => {
+              /* Сегодняшний вопрос стабилен: после ответа его id уже в seen — исключаем его из «виденных» для выбора. */
+              const seen = st.quiz?.seen || [], seenForPick = st.quiz?.lastDay === st.day ? seen.slice(0, -1) : seen;
+              const item = lavkaPickQuiz(studyItems, { day: st.day, chapter: st.chapter || 1, seen: seenForPick, weak });
+              return <LavkaQuizCard key={st.day + item.id} st={st} item={item} onAnswer={answerQuiz} />;
+            })()}
             {points.length > 1 && (
               <div className="flex gap-1.5 mb-3">
                 {points.map((p) => (

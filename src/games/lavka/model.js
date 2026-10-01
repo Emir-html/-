@@ -733,6 +733,88 @@ const LAVKA_QUIZ = [
     why: "P = 60 − Q/2, TR = 60Q − Q²/2, MR = 60 − Q = 20. MR падает вдвое быстрее обратного спроса." },
 ];
 
+/* ===== «Вопрос дня» из уроков MirStudy =====
+   Игра только читает учебные банки (тесты, вопросы с вариантами, карточки) и прогресс SM-2 — ничего не пишет.
+   Темы — ключи MASTER_MAP; глава уровня 1 → темы, которые она «оживляет». */
+const LAVKA_STUDY_TOPICS = {
+  1: ["s-equilibrium", "equilibrium", "c-demand", "c-goods-types", "e-basic", "e-properties", "e-geometric", "e-cross-income",
+    "pr-elast", "s-monopoly", "pr-monopoly", "m-derivative", "s-deficit-surplus"],
+  2: ["p-costs", "p-cost-derivation", "p-function", "p-returns", "i-tax", "i-subsidy", "f-interest", "f-credit", "f-discounting",
+    "s-natural-monopoly", "bz-unit", "bz-costclass"],
+  3: ["i-price-controls", "i-lerner-regulation", "s-discrimination", "price-discrimination-2", "pr-discrim", "s-bertrand", "s-cournot",
+    "s-stackelberg", "s-game-theory", "s-perfect", "s-monopolistic", "surplus", "i-surplus", "dwl", "i-dwl"],
+};
+const lavkaTopicChapter = (topic) => Number(Object.keys(LAVKA_STUDY_TOPICS).find((c) => LAVKA_STUDY_TOPICS[c].includes(topic)) || 0);
+/* Вопросы с вариантами без ключа темы (только микро) — глава по ключевым словам. */
+const lavkaGuessChapter = (text) =>
+  /потол|дискрим|олигоп|Курно|Бертран|картел|излиш|DWL|совершенн|пол цен|квот/i.test(text) ? 3
+    : /налог|издерж|субсид|аккорд|затрат|\bMC\b|\bAC\b/i.test(text) ? 2 : 1;
+/* Свои 15 задач «Лавки» тоже в банке: глава и тема. */
+const LAVKA_QUIZ_META = [[1, "s-monopoly"], [2, "i-tax"], [2, "p-costs"], [1, "e-properties"], [2, "s-monopoly"], [3, "i-price-controls"],
+  [3, "s-discrimination"], [1, "e-basic"], [1, "e-properties"], [1, "s-equilibrium"], [3, "s-bertrand"], [2, "i-subsidy"], [1, "bz-inventory"],
+  [3, "i-dwl"], [1, "s-monopoly"]];
+const lavkaHash = (str) => { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+
+/* Банк уроков → единый вид { id, q, opts, a, why, chapter, topic, src }. */
+function lavkaStudyItems(bank = {}) {
+  const out = [];
+  for (const t of bank.tests || []) {
+    const chapter = lavkaTopicChapter(t.topic);
+    if (!chapter || typeof t.a !== "boolean") continue;
+    out.push({ id: `test:${t.id}`, q: `Верно ли: ${t.q}`, opts: ["Верно", "Неверно"], a: t.a ? 0 : 1, why: t.why, chapter, topic: t.topic, src: t.src || "Тест из уроков" });
+  }
+  (bank.hard || []).forEach((h, i) => {
+    if (h.th !== "micro" || !Array.isArray(h.opts) || typeof h.a !== "number") return;
+    out.push({ id: `hard:${i}`, q: h.q, opts: h.opts, a: h.a, why: h.why, chapter: lavkaGuessChapter(h.q + " " + h.why), topic: null, src: "Пробный экзамен, 1 тур" });
+  });
+  const cards = (bank.cards || []).filter((c) => lavkaTopicChapter(c.topic) && c.back && c.back.length <= 300);
+  for (const c of cards) {
+    const chapter = lavkaTopicChapter(c.topic);
+    const others = cards.filter((x) => x.id !== c.id && x.back !== c.back && lavkaTopicChapter(x.topic) === chapter);
+    const pool = others.length >= 2 ? others : cards.filter((x) => x.id !== c.id && x.back !== c.back);
+    if (pool.length < 2) continue;
+    const h = lavkaHash(c.id);
+    const d1 = pool[h % pool.length], d2 = pool[(h + 1 + (h >> 8) % (pool.length - 1)) % pool.length];
+    const wrong = d1.back === d2.back ? [d1.back, pool.find((x) => x.back !== d1.back)?.back].filter(Boolean) : [d1.back, d2.back];
+    if (wrong.length < 2) continue;
+    const pos = h % 3, opts = [...wrong];
+    opts.splice(pos, 0, c.back);
+    out.push({ id: `card:${c.id}`, q: c.front, opts, a: pos, why: c.back, chapter, topic: c.topic, src: `Карточка «${c.topicLabel || c.topic}»` });
+  }
+  return [...out, ...lavkaOwnQuizItems()];
+}
+
+const lavkaOwnQuizItems = () => LAVKA_QUIZ.map((x, i) => ({ id: `lavka:${i}`, q: x.q, opts: x.opts, a: x.a, why: x.why,
+  chapter: LAVKA_QUIZ_META[i][0], topic: LAVKA_QUIZ_META[i][1], src: "Задача «Лавки»" }));
+
+/* Вопрос дня: детерминирован по дню и главе; темы открытых глав (текущая ×2), слабые по SM-2 ×3, без повторов из seen. */
+function lavkaPickQuiz(items, { day, chapter, seen = [], weak = [] }) {
+  const all = [...(items || []), ...lavkaOwnQuizItems().filter((o) => !(items || []).some((x) => x.id === o.id))];
+  const open = all.filter((x) => x.chapter >= 1 && x.chapter <= chapter);
+  let pool = open.filter((x) => !seen.includes(x.id));
+  if (!pool.length) pool = open.length ? open : lavkaOwnQuizItems();
+  const w = pool.map((x) => (x.chapter === chapter ? 2 : 1) * (weak.includes(x.topic) ? 3 : 1));
+  const total = w.reduce((a, b) => a + b, 0);
+  let r = lavkaRng(day * 7919 + chapter * 31)() * total;
+  for (let i = 0; i < pool.length; i++) { r -= w[i]; if (r < 0) return pool[i]; }
+  return pool[pool.length - 1];
+}
+
+/* Слабые темы: карточки с лёгкостью SM-2 < 2,2 или просроченные + отмеченные «трудными». */
+function lavkaWeakTopics(cards = [], reviewState = {}, struggling = {}, now = Date.now()) {
+  const byId = Object.fromEntries(cards.map((c) => [c.id, c]));
+  const weak = new Set();
+  for (const [id, r] of Object.entries(reviewState || {})) {
+    const c = byId[id];
+    if (c && r && ((typeof r.ease === "number" && r.ease < 2.2) || (typeof r.due === "number" && r.due < now))) weak.add(c.topic);
+  }
+  for (const [id, v] of Object.entries(struggling || {})) {
+    const topic = (v && typeof v === "object" && v.topic) || byId[id]?.topic;
+    if (topic) weak.add(topic);
+  }
+  return [...weak].filter((t) => lavkaTopicChapter(t));
+}
+
 const lavkaFmt = (n) => Math.round(n).toLocaleString("ru-RU");
 const lavkaRub = (n) => `${n < 0 ? "−" : ""}${lavkaFmt(Math.abs(n))} ₽`;
 const LAVKA_MONO = "'IBM Plex Mono', monospace";
@@ -792,7 +874,8 @@ export {
   LAVKA_UPGRADES, LAVKA_EVENTS, LAVKA_GOALS, LAVKA_QUIZ,
   lavkaUnlocked, lavkaOpenPoints, lavkaDefaultSettings, lavkaNewState, lavkaParams, lavkaCompBR, lavkaTS,
   lavkaSimulate, lavkaRollEvent, lavkaFit, lavkaFmt, lavkaRub, LAVKA_MONO,
-  lavkaPlan, lavkaVerdict, lavkaLoad, lavkaFitStatus, LAVKA_MODEL_VERSION, LAVKA_SIGN_MULT,
+  lavkaPlan, lavkaVerdict, lavkaLoad, lavkaFitStatus,
+  LAVKA_STUDY_TOPICS, lavkaStudyItems, lavkaPickQuiz, lavkaWeakTopics, lavkaOwnQuizItems, LAVKA_MODEL_VERSION, LAVKA_SIGN_MULT,
   lavkaCeilingParadox, lavkaShownLambda, LAVKA_LAMBDA_SHOWN,
   lavkaRng, lavkaMakeEvent, LAVKA_EXAM_FROM_DAY, LAVKA_EXAM_KINDS, LAVKA_MEDALS, lavkaExamOpen, lavkaExamMedal,
   lavkaExamDayState, lavkaExamNew, lavkaExamBotSettings, lavkaExamPlayDay, lavkaExamEfficiency, lavkaExamFinish, lavkaExamResult, lavkaExamStart,

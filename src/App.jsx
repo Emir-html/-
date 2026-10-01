@@ -46627,6 +46627,9 @@ function HomeScreen({ onSelect, theme, onToggleTheme }) {
    Игра вынесена в модуль: логика — src/games/lavka/model.js, экраны — src/games/lavka/ui.jsx.
    Сохранение — ключ "lavka-save": правило newer в ProgressMerge и запись в BACKUP_KEYS остались здесь, в App.jsx. */
 
+/* «Вопрос дня» в «Лавке» берёт вопросы из учебных банков — только чтение, контент не меняется. */
+const LAVKA_STUDY_BANK = { tests: TEST_BANK, hard: Q1_HARD, cards: BUILTIN_CARDS };
+
 /* ============================= КОРНЕВОЙ КОМПОНЕНТ ============================= */
 
 export default function AppRoot() {
@@ -46659,6 +46662,6 @@ export default function AppRoot() {
   if (screen === "prepplan30") return <PrepPlan30Screen onBack={() => setScreen("home")} theme={rootTheme} onToggleTheme={toggleRootTheme} />;
   if (screen === "russian") return <TrackApp track="russian" onBack={() => setScreen("home")} theme={rootTheme} onToggleTheme={toggleRootTheme} />;
   if (screen === "social") return <SocialApp onBack={() => setScreen("home")} theme={rootTheme} onToggleTheme={toggleRootTheme} />;
-  if (screen === "lavka") return <LavkaScreen onBack={() => setScreen("home")} theme={rootTheme} onToggleTheme={toggleRootTheme} />;
+  if (screen === "lavka") return <LavkaScreen onBack={() => setScreen("home")} theme={rootTheme} onToggleTheme={toggleRootTheme} studyBank={LAVKA_STUDY_BANK} />;
   return <HomeScreen onSelect={setScreen} theme={rootTheme} onToggleTheme={toggleRootTheme} />;
 }
