@@ -9,6 +9,7 @@ import {
   LAVKA_WEEKDAYS, LAVKA_UPGRADES, LAVKA_EVENTS, LAVKA_GOALS, LAVKA_QUIZ, LAVKA_MONO,
   lavkaWeekday, lavkaUnlocked, lavkaOpenPoints, lavkaNewState, lavkaParams, lavkaSimulate, lavkaFit, lavkaFmt, lavkaRub,
   lavkaVerdict, lavkaLoad, lavkaShownLambda,
+  LAVKA_CHAPTERS, LAVKA_ORACLE_DAYS, lavkaChapterOf, lavkaUpgradeOpen,
 } from "./model.js";
 function LavkaStepper({ value, onChange, step = 1, min = 0, max = 9999, suffix }) {
   const btn = { background: COLORS.paperDeep, color: COLORS.ink, border: `1px solid ${COLORS.line}` };
@@ -77,7 +78,7 @@ function LavkaEventCard({ st }) {
           {open && (
             <div className="mt-2 text-sm leading-relaxed" style={{ color: COLORS.ink }}>
               <p>{def.theory(ev)}</p>
-              {moved.length > 0 && (
+              {moved.length > 0 && st.day <= LAVKA_ORACLE_DAYS && (
                 <div className="mt-2 rounded-xl p-3" style={{ background: COLORS.surfaceSolid }}>
                   {moved.map(({ point, pid, a, b }) => (
                     <p key={point + pid} className="text-xs" style={{ fontFamily: LAVKA_MONO, color: COLORS.inkSoft }}>
@@ -187,8 +188,9 @@ function LavkaProductRow({ st, point, pid, onSet, fit }) {
       {lastRow && (
         <p className="text-xs mt-1.5" style={{ color: COLORS.inkSoft, fontFamily: LAVKA_MONO }}>
           вчера: {lastRow.P} ₽, хотели {lastRow.D}, продано {lastRow.S}
-          {lastRow.mr != null && (() => { const lam = lavkaShownLambda(lastRow.lambda), t = lastRow.mc + lam;
-            return <> , MR {lastRow.mr.toFixed(0)} {Math.abs(lastRow.mr - t) <= 3 ? "≈" : lastRow.mr > t ? ">" : "<"} {lam > 0 ? `MC + λ ${t.toFixed(0)}` : `MC ${lastRow.mc.toFixed(0)}`}</>; })()}
+          {lastRow.mr != null && (() => { const oracle = !lastRow.mode || lastRow.mode === "oracle";
+            const lam = oracle ? lavkaShownLambda(lastRow.lambda) : 0, t = lastRow.mc + lam;
+            return <> , {oracle ? "MR" : "MR по тетради"} {lastRow.mr.toFixed(0)} {Math.abs(lastRow.mr - t) <= 3 ? "≈" : lastRow.mr > t ? ">" : "<"} {lam > 0 ? `MC + λ ${t.toFixed(0)}` : `MC ${lastRow.mc.toFixed(0)}`}</>; })()}
         </p>
       )}
     </LavkaCard>
@@ -310,6 +312,16 @@ function LavkaReport({ rep, st, onNext }) {
         </div>
       </LavkaCard>
 
+      {rep.newChapter && (() => { const ch = LAVKA_CHAPTERS[rep.newChapter - 1]; return (
+        <LavkaCard tint={COLORS.blueSoft}>
+          <p className="font-semibold">📖 Открыта глава {ch.n}: «{ch.title}»</p>
+          <p className="text-sm mt-1" style={{ color: COLORS.ink }}>
+            Новые события: {ch.events.map((id) => LAVKA_EVENTS[id].emoji + " " + LAVKA_EVENTS[id].title).join(", ")}.
+            Новые улучшения: {ch.upgrades.map((id) => { const u = LAVKA_UPGRADES.find((x) => x.id === id); return u.emoji + " " + u.title; }).join(", ")}.
+          </p>
+        </LavkaCard>
+      ); })()}
+
       {rep.newGoals.length > 0 && (
         <LavkaCard tint={COLORS.amberSoft}>
           {rep.newGoals.map((id) => {
@@ -334,21 +346,21 @@ function LavkaReport({ rep, st, onNext }) {
               {cell("Цена", `${r.P} ₽`)}
               {cell("Хотели купить", r.D)}
               {cell("Продано", r.S)}
-              {cell("|E| (по средней кривой)", r.el != null ? r.el.toFixed(2) : "—", r.el != null ? (r.el > 1 ? COLORS.sage : COLORS.rust) : undefined)}
+              {cell(r.mode === "notebook" ? "|E| (по тетради)" : "|E| (по средней кривой)", r.el != null ? r.el.toFixed(2) : "—", r.el != null ? (r.el > 1 ? COLORS.sage : COLORS.rust) : undefined)}
               {r.lostStock > 0 && cell("Не хватило товара", r.lostStock, COLORS.rust)}
               {r.lostQueue > 0 && cell("Ушли из очереди", r.lostQueue, COLORS.rust)}
               {r.spoiled > 0 && cell("Выброшено", `${r.spoiled} (−${lavkaFmt(r.spoiled * r.cBuy)} ₽)`, COLORS.rust)}
               {r.carry > 0 && cell("В холодильник", r.carry)}
-              {cell("Излишек покупателей", lavkaRub(r.cs))}
+              {cell(r.mode === "notebook" ? "Излишек покупателей (оценка)" : "Излишек покупателей", r.cs != null ? lavkaRub(r.cs) : "—")}
               {cell("Твой излишек", lavkaRub(r.ps))}
-              {cell("DWL (к P = MC)", lavkaRub(r.dwl), COLORS.rust)}
+              {cell(r.mode === "notebook" ? "DWL (оценка)" : "DWL (к P = MC)", r.dwl != null ? lavkaRub(r.dwl) : "—", COLORS.rust)}
             </div>
             <p className="text-sm mt-3" style={{ color: COLORS.ink }}>{verdict(r)}</p>
             {r.el != null && r.el < 1 && r.mr != null && (
               <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>|E| &lt; 1 — неэластичный участок: MR &lt; 0. Монополист здесь не стоит никогда: подняв цену, получишь больше выручки при меньших издержках.</p>
             )}
             {r.capacityBound && (
-              <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Прилавок не справился с потоком: мощность — ещё одно ограничение.{lavkaShownLambda(r.lambda) > 0
+              <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Прилавок не справился с потоком: мощность — ещё одно ограничение.{(!r.mode || r.mode === "oracle") && lavkaShownLambda(r.lambda) > 0
                 ? ` При лучших ценах место у прилавка стоило бы λ ≈ ${r.lambda.toFixed(0)} ₽ (теневая цена мощности), и правило становится MR = MC + λ: выгоднее поднять цены, чем держать очередь.`
                 : " Мощности хватает на лучшие цены — очередь из-за низкой цены или случайного всплеска спроса."}</p>
             )}
@@ -585,7 +597,7 @@ function LavkaScreen({ onBack, theme, onToggleTheme }) {
       </header>
 
       <main className="max-w-3xl mx-auto px-5 pb-24">
-        <LavkaAwning title="Лавка" sub={`День ${st.day}, ${LAVKA_WEEKDAYS[lavkaWeekday(st.day)]} · на счёте ${lavkaRub(st.cash)}${st.debt > 0 ? ` · долг ${lavkaRub(st.debt)}` : ""} · лояльность ${points.map((p) => Math.round(((st.rep || {})[p] || 1) * 100) + "%").join(" / ")}`} />
+        <LavkaAwning title="Лавка" sub={`Глава ${st.chapter || 1} «${LAVKA_CHAPTERS[(st.chapter || 1) - 1].title}» · день ${st.day}, ${LAVKA_WEEKDAYS[lavkaWeekday(st.day)]} · на счёте ${lavkaRub(st.cash)}${st.debt > 0 ? ` · долг ${lavkaRub(st.debt)}` : ""} · лояльность ${points.map((p) => Math.round(((st.rep || {})[p] || 1) * 100) + "%").join(" / ")}`} />
 
         {phase === "morning" && (
           <div className="flex gap-1.5 mb-4 flex-wrap">
@@ -649,6 +661,20 @@ function LavkaScreen({ onBack, theme, onToggleTheme }) {
           <div>
             {LAVKA_UPGRADES.map((u) => {
               const owned = !!st.upgrades[u.id], afford = st.cash >= u.cost;
+              if (!lavkaUpgradeOpen(st, u)) {
+                const ch = LAVKA_CHAPTERS[lavkaChapterOf("upgrades", u.id) - 1];
+                return (
+                  <LavkaCard key={u.id} style={{ opacity: 0.55 }}>
+                    <div className="flex items-start gap-3">
+                      <span className="text-2xl" aria-hidden="true">🔒</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold">{u.title}</p>
+                        <p className="text-sm mt-0.5" style={{ color: COLORS.inkSoft }}>Откроется в главе {ch.n} «{ch.title}».</p>
+                      </div>
+                    </div>
+                  </LavkaCard>
+                );
+              }
               return (
                 <LavkaCard key={u.id} tint={owned ? COLORS.sageSoft : undefined}>
                   <div className="flex items-start gap-3">
@@ -709,6 +735,21 @@ function LavkaScreen({ onBack, theme, onToggleTheme }) {
                 ))}
               </div>
             </LavkaCard>
+            {(() => {
+              const cur = LAVKA_CHAPTERS[(st.chapter || 1) - 1], next = LAVKA_CHAPTERS[st.chapter || 1];
+              const g = cur.goal && LAVKA_GOALS.find((x) => x.id === cur.goal);
+              return (
+                <LavkaCard tint={COLORS.blueSoft}>
+                  <p className="font-semibold">📖 Глава {cur.n}: «{cur.title}»</p>
+                  <p className="text-sm mt-1" style={{ color: COLORS.ink }}>
+                    {next && g
+                      ? <>Чтобы открыть главу {next.n} «{next.title}»: {st.goals[g.id] ? "✓" : "выполни"} цель {g.emoji} «{g.title}»{st.day < next.fromDay ? ` и доработай до ${next.fromDay}-го дня` : ""}.</>
+                      : "Все главы уровня открыты. Скоро — экзамен уровня."}
+                  </p>
+                  {st.day <= LAVKA_ORACLE_DAYS && <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Первую неделю отчёт подсказывает по истинному спросу. С {LAVKA_ORACLE_DAYS + 1}-го дня — только по твоей тетради.</p>}
+                </LavkaCard>
+              );
+            })()}
             {LAVKA_GOALS.map((g) => {
               const done = st.goals[g.id];
               return (

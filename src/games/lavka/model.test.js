@@ -263,3 +263,68 @@ test("вердикт на потолке: «не весь спрос» — то�
   assert.match(L.lavkaVerdict(row({ ...base, qBest: 43, dExp: 86 })), /а не весь спрос/);
   assert.match(L.lavkaVerdict(row({ ...base, qBest: 79, dExp: 79 })), /Места хватает на весь спрос/);
 });
+
+/* ===== Кривая сложности: главы уровня 1 и «оракул» только в первую неделю ===== */
+
+test("новая игра — глава 1: только события спроса и улучшения главы 1", () => {
+  const st = fresh();
+  assert.equal(st.chapter, 1);
+  for (let i = 0; i < 300; i++) assert.ok(["heat", "rain", "festival"].includes(L.lavkaRollEvent(st).id));
+  const open = L.LAVKA_UPGRADES.filter((u) => L.lavkaUpgradeOpen(st, u)).map((u) => u.id).sort();
+  assert.deepEqual(open, ["analyst", "fridge", "helper"]);
+  st.chapter = 3;
+  assert.equal(L.LAVKA_UPGRADES.filter((u) => L.lavkaUpgradeOpen(st, u)).length, L.LAVKA_UPGRADES.length);
+});
+
+test("глава открывается, когда прошла неделя И выполнена ключевая цель", () => {
+  const day = (d, goals) => { const st = fresh(); st.day = d; st.goals = goals; st.cash = 1e5; return L.lavkaSimulate(st).next.chapter; };
+  assert.equal(day(5, { mrmc: 3 }), 1, "цель есть, но неделя не прошла");
+  assert.equal(day(7, { mrmc: 3 }), 2, "после 7-го дня с целью — глава 2");
+  assert.equal(day(20, {}), 1, "без цели глава не открывается");
+  const st = fresh(); st.day = 14; st.chapter = 2; st.goals = { mrmc: 3, week: 12 }; st.cash = 1e5;
+  const { next, report } = L.lavkaSimulate(st);
+  assert.equal(next.chapter, 3); assert.equal(report.newChapter, 3);
+});
+
+test("старое сохранение без глав: глава по номеру дня, купленное не пропадает", () => {
+  const old = { ...fresh(), day: 16, upgrades: { office: true, coffee: true } };
+  delete old.chapter;
+  const s = L.lavkaLoad(JSON.stringify(old));
+  assert.equal(s.chapter, 3); assert.ok(s.upgrades.office);
+  assert.equal(L.lavkaLoad(JSON.stringify({ ...old, day: 9 })).chapter, 2);
+  assert.equal(L.lavkaLoad(JSON.stringify({ ...old, day: 3 })).chapter, 1);
+});
+
+const dayReport = (d, opts = {}) => {
+  const st = fresh(); st.day = d; st.chapter = 2; st.cash = 1e5; Object.assign(st.upgrades, opts.upgrades || {});
+  if (opts.obs) st.obs.main.lemonade = opts.obs;
+  st.settings.main.lemonade = { price: 45, order: 70 };
+  return L.lavkaSimulate(st).report.rows.find((r) => r.pid === "lemonade");
+};
+const goodObs = [30, 40, 50, 60].map((P, i) => ({ P, D: 160 - 2 * P, k: 1, day: i + 1, base: true }));
+
+test("оракул в первую неделю, потом вердикт по тетради или только факты", () => {
+  const r1 = dayReport(7);
+  assert.equal(r1.mode, "oracle"); assert.match(L.lavkaVerdict(r1), /MR/);
+  const r2 = dayReport(8, { upgrades: { analyst: true }, obs: goodObs });
+  assert.equal(r2.mode, "notebook");
+  near(r2.mr, 2 * 45 - 80, 1e-6); // MR по оценке тетради: 2P − α/β
+  assert.match(L.lavkaVerdict(r2), /тетрад/i);
+  const r3 = dayReport(8);
+  assert.equal(r3.mode, "facts");
+  assert.equal(r3.mr, null); assert.equal(r3.el, null); assert.equal(r3.dwl, null);
+  const v3 = L.lavkaVerdict(r3);
+  assert.ok(!/MR\s*[=≈<>]/.test(v3), v3); assert.match(v3, /тетрад/i);
+  const r4 = dayReport(8, { upgrades: { analyst: true }, obs: goodObs.slice(0, 2) });
+  assert.equal(r4.mode, "facts", "меньше 3 обычных дней — оценки нет");
+});
+
+test("вердикт по тетради не врёт в день события и при очереди упоминает цену места", () => {
+  const st = fresh(); st.day = 9; st.chapter = 2; st.cash = 1e5; st.upgrades.analyst = true;
+  st.obs.main.lemonade = goodObs; st.event = { id: "heat", daysLeft: 1 };
+  st.settings.main.lemonade = { price: 45, order: 70 };
+  const r = L.lavkaSimulate(st).report.rows.find((x) => x.pid === "lemonade");
+  assert.equal(r.mode, "facts", "в день события тетрадь не знает сегодняшнюю кривую");
+  const q = L.lavkaVerdict({ ...row({ mode: "notebook", mr: 30, lostQueue: 10, D: 80, S: 70 }) });
+  assert.match(q, /очеред|прилав/i);
+});

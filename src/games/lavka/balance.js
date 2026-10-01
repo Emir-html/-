@@ -22,7 +22,7 @@ function play(fn) {
   for (let d = 0; d < DAYS; d++) {
     for (const [day, id] of BUY) {
       const u = L.LAVKA_UPGRADES.find((x) => x.id === id);
-      if (d >= day && !st.upgrades[id] && st.cash >= u.cost) { st.cash -= u.cost; st.upgrades[id] = true; firstBuy[id] = st.day; }
+      if (d >= day && !st.upgrades[id] && L.lavkaUpgradeOpen(st, u) && st.cash >= u.cost) { st.cash -= u.cost; st.upgrades[id] = true; firstBuy[id] = st.day; }
     }
     for (const p of L.lavkaOpenPoints(st)) for (const pid of L.lavkaUnlocked(st)) {
       const m = L.lavkaParams(st, p, pid), s = fn(m, L.lavkaPlan(st, p).rows[pid]);
@@ -30,21 +30,21 @@ function play(fn) {
     }
     const { next, report } = L.lavkaSimulate(st); total += report.profit; st = next;
   }
-  return { total, cash: st.cash, rep: st.rep.main, firstBuy };
+  return { total, cash: st.cash, rep: st.rep.main, firstBuy, chapter: st.chapter };
 }
 
 const rows = [];
 for (const [name, fn] of Object.entries(strategies)) {
-  let t = 0, c = 0, r = 0;
+  let t = 0, c = 0, r = 0, ch = 0;
   const first = [], office = []; // день первой покупки улучшения и день открытия второй точки
   for (let i = 0; i < RUNS; i++) {
-    const o = play(fn); t += o.total; c += o.cash; r += o.rep;
+    const o = play(fn); t += o.total; c += o.cash; r += o.rep; ch += o.chapter;
     const days = Object.values(o.firstBuy); if (days.length) first.push(Math.min(...days));
     if (o.firstBuy.office) office.push(o.firstBuy.office);
   }
   const avg = (a) => (a.length ? (a.reduce((s, x) => s + x, 0) / a.length).toFixed(1) + (a.length < RUNS ? ` (${a.length}/${RUNS})` : "") : "—");
   rows.push({ стратегия: name, "прибыль за период": Math.round(t / RUNS), "касса в конце": Math.round(c / RUNS), "лояльность парка": (r / RUNS).toFixed(2),
-    "1-я покупка, день": avg(first), "2-я точка, день": avg(office) });
+    "глава к концу": (ch / RUNS).toFixed(1), "1-я покупка, день": avg(first), "2-я точка, день": avg(office) });
 }
 rows.sort((a, b) => b["прибыль за период"] - a["прибыль за период"]);
 console.log(`Дней: ${DAYS}, прогонов на стратегию: ${RUNS}`);
