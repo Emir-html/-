@@ -376,6 +376,14 @@ function LavkaReport({ rep, st, onNext }) {
         );
       })}
 
+      {rep.rows.some((r) => r.cs != null && (r.lostStock > 0 || r.lostQueue > 0 || r.spoiled > 0)) && (
+        <p className="text-xs mb-3 px-1" style={{ color: COLORS.inkSoft }}>
+          Допущения: излишек покупателей посчитан так, будто купили те, кто ценит товар выше всех; при очереди и дефиците
+          достаётся случайным людям, поэтому реальный излишек меньше. DWL считается относительно продажи по P = MC;
+          выброшенный товар — тоже потеря для общества, но в DWL не входит.
+        </p>
+      )}
+
       {rep.repDelta && Object.entries(rep.repDelta).map(([p, d]) => {
         const up = d.to > d.from + 1e-9, down = d.to < d.from - 1e-9;
         return (
