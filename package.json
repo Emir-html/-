@@ -4,7 +4,25 @@
   "version": "0.17.0",
   "type": "module",
   "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
     "test": "node --test \"src/**/*.test.js\"",
-    "balance": "node src/games/lavka/balance.js"
+    "balance": "node src/games/lavka/balance.js",
+    "build:check": "esbuild src/main.jsx --bundle --jsx=automatic --log-level=error --outfile=node_modules/.cache/mirstudy-check.js",
+    "check": "npm run build:check && npm test"
+  },
+  "dependencies": {
+    "lucide-react": "^1.49.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.1",
+    "autoprefixer": "^10.6.1",
+    "esbuild": "^0.28.2",
+    "postcss": "^8.5.28",
+    "tailwindcss": "^3.4.19",
+    "vite": "^8.3.2"
   }
 }

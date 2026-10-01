@@ -37946,7 +37946,9 @@ ${part2Answer}
       });
       bumpSocialStreak();
     } catch (e) {
-      setPart2Error("Не удалось проверить ответ — попробуй ещё раз через момент.");
+      /* Вне claude.ai запрос к API идёт без ключа и всегда падает — говорим об этом прямо. */
+      const onClaude = typeof window !== "undefined" && /(^|\.)(claude\.ai|claudeusercontent\.com)$/.test(window.location.hostname);
+      setPart2Error(onClaude ? "Не удалось проверить ответ — попробуй ещё раз через момент." : "AI-проверка доступна только в версии на claude.ai.");
     } finally {
       setPart2Grading(false);
     }

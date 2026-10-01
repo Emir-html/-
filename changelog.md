@@ -2,6 +2,14 @@
 Формат: дата · чат · что изменено · вошло ли в Project Knowledge (PK).
 Новые записи — сверху.
 
+## 2026-10-01 · Claude Code · Запуск в браузере (Vite)
+- Vite 8 + React 18 + lucide-react; Tailwind v3 локально (PostCSS), а не CDN: работает офлайн, совпадает с версией артефактов.
+- Шрифты Figtree и IBM Plex Mono из Google Fonts в `index.html`; `storage-shim.js` подключается до App.
+- AI-проверка части 2 (ЕГЭ, обществознание): вне claude.ai выводится «AI-проверка доступна только в версии на claude.ai»
+  (одна строка в обработчике ошибки, учебный текст не тронут).
+- Проверено в Chromium: главный экран, тёмная тема, «Лавка» (день сыгран, `lavka-save` сохраняется), импорт
+  `data/progress-2026-09-24.json` — «обновлено 8 разделов». `npm run check` — зелёный.
+
 ## 2026-10-01 · Claude Code · Импорт MirStudy 17 и комплекта «Лавки»
 - Репозиторий стал проектом: `src/App.jsx` (копия econ-trainer__17_.jsx без изменений), `src/main.jsx`, `src/storage-shim.js`,
   `src/state/progress-merge.js`, `src/games/lavka/` (model.js, ui.jsx, тесты, баланс), `docs/` (спецификация, источники),
