@@ -107,20 +107,20 @@ function lavkaRng(seed) {
 const LAVKA_EVENTS = {
   heat: {
     emoji: "☀️", title: "Жара +32°", days: [1, 2], weight: 3,
-    text: () => "Весь город хочет холодного: лимонад и мороженое сметают, горячий кофе берут реже.",
+    text: () => "Весь город хочет холодного: готовность платить за лимонад ×1,5, за мороженое ×1,6, за горячий кофе ×0,85.",
     effect: (pid) => ({ lemonade: { aMult: 1.5 }, icecream: { aMult: 1.6 }, coffee: { aMult: 0.85 } })[pid],
     theory: () => "Погода — неценовой фактор: кривая спроса сдвигается целиком. При Q = A − B·P и постоянных MC оптимум P* = (A/B + MC)/2. Рост A в 1,5 раза поднимает резервную цену A/B в 1,5 раза, а P* — на половину этого прироста (если прилавок не узкое место; иначе растёт и теневая цена места λ).",
   },
   rain: {
     emoji: "🌧", title: "Ливень весь день", days: [1, 2], weight: 3,
-    text: () => "Холодного почти не хочется, зато все греются кофе.",
+    text: () => "Холодного почти не хочется (лимонад ×0,6, мороженое ×0,5), зато все греются кофе (×1,3).",
     effect: (pid) => ({ lemonade: { aMult: 0.6 }, icecream: { aMult: 0.5 }, coffee: { aMult: 1.3 } })[pid],
     theory: () => "Один и тот же неценовой фактор сдвигает спрос на разные блага в разные стороны: на холодное — влево, на кофе — вправо. Оптимум пересчитывается по каждому товару отдельно.",
   },
   festival: {
     emoji: "🎪", title: "Городской фестиваль", days: [1, 1], weight: 2,
     text: () => "В парке фестиваль — покупателей на треть больше по всем товарам.",
-    effect: () => ({ nMult: 1.3 }),
+    effect: (pid, point) => (point === "main" ? { nMult: 1.3 } : null),
     theory: () => "Пришло больше таких же покупателей: рыночный спрос — сумма индивидуальных, Q = 1,3·(A − B·P). Кривая сдвигается вправо, но резервная цена A/B и эластичность при каждой цене прежние — значит, P* = (A/B + MC)/2 не меняется, растёт только объём. Если же прилавок не справится с потоком, появится теневая цена места λ — и выгодная цена поднимется (MR = MC + λ).",
   },
   flour: {
@@ -136,10 +136,12 @@ const LAVKA_EVENTS = {
     theory: () => "Два эффекта: каждый покупатель готов платить больше (A ×1,3) и меньше реагирует на цену (B ×0,75) — резервная цена A/B растёт в 1,73 раза. По правилу Лернера (P − MC)/P = 1/|E|: чем ниже эластичность в оптимуме, тем выше наценка.",
   },
   tax: {
-    emoji: "🧾", title: "Акциз 10 ₽", days: [2, 3], weight: 2, needsProduct: true,
-    text: (ev) => `Город ввёл акциз: 10 ₽ с каждой проданной единицы товара «${LAVKA_PRODUCTS[ev.product].name}». Платит продавец.`,
-    effect: (pid, point, ev) => (pid === ev.product ? { tax: 10 } : null),
-    theory: () => "Для продавца налог — рост MC на t. Монополист с линейным спросом и свободным прилавком (λ = 0) поднимает цену на t/2 = 5 ₽: бремя делится поровну между покупателями и продавцом, хотя юридически платит продавец. Если прилавок полон, перенос меньше половины: часть налога «съедает» теневая цена места. Объём падает — растёт DWL.",
+    emoji: "🧾", title: "Акциз", days: [2, 3], weight: 2, needsProduct: true,
+    text: (ev) => ev.taxes
+      ? `Город ввёл акциз на всё: ${Object.entries(ev.taxes).map(([pid, t]) => `${LAVKA_PRODUCTS[pid].name.toLowerCase()} ${t} ₽`).join(", ")} с каждой проданной единицы. Платит продавец.`
+      : `Город ввёл акциз: 10 ₽ с каждой проданной единицы товара «${LAVKA_PRODUCTS[ev.product].name}». Платит продавец.`,
+    effect: (pid, point, ev) => (ev.taxes ? (ev.taxes[pid] ? { tax: ev.taxes[pid] } : null) : pid === ev.product ? { tax: 10 } : null),
+    theory: () => "Для продавца налог — рост MC на t. Монополист с линейным спросом и свободным прилавком (λ = 0) поднимает цену на t/2 (при t = 10 ₽ — на 5 ₽): бремя делится поровну между покупателями и продавцом, хотя юридически платит продавец. Если прилавок полон, перенос меньше половины: часть налога «съедает» теневая цена места. Объём падает — растёт DWL.",
   },
   ceiling: {
     emoji: "📜", title: "Потолок цен", days: [2, 2], weight: 2, needsProduct: true,
@@ -344,12 +346,12 @@ function lavkaNotebookVerdict(r) {
   const mr = `по тетради MR ≈ ${r.mr.toFixed(0)} ₽`, mc = `MC = ${r.mc.toFixed(0)} ₽`;
   if (r.cap != null && r.P >= r.cap) return `Цена стоит на потолке ${r.cap} ₽: до объёма D(потолок) каждая единица приносит потолок, ${r.cap >= r.mc ? "это выше" : "это ниже"} ${mc}. Оцени по тетради D(потолок) и сколько мест у прилавка останется после других товаров.`;
   if (r.lostStock > 0) return `Товар кончился: ${lavkaBuyers(r.lostStock)} без покупки. Сначала закупка — спрос при ${r.P} ₽ был ${r.D}. Цена: ${mr}, ${mc}.`;
-  const full = `прилавок был полон (${lavkaBuyers(r.lostQueue)} из очереди)`;
+  const full = `прилавок был полон: ${lavkaBuyers(r.lostQueue)} из очереди`;
   const placeRule = "пока прилавок полон, место тоже стоит денег: MR = MC + цена места > MC";
   if (r.lostQueue > 0) {
     if (Math.abs(d) <= 3) return `${mr} ≈ ${mc}, но ${full}. А ${placeRule} — подними цену, освободишь место под другой товар.`;
     if (d > 0) return `${mr} > ${mc}, но ${full}. Снизишь цену — этот товар займёт места других, а выручка с места упадёт: ${placeRule}.`;
-    return `${mr} < ${mc}: подними цену — и прибыль вырастет, и место освободится (${full}).`;
+    return `${mr} < ${mc}: подними цену — и прибыль вырастет, и место освободится, ведь ${full}.`;
   }
   if (Math.abs(d) <= 3) return `${mr} ≈ ${mc} — по твоей оценке спроса цена близка к оптимуму.`;
   if (d > 0) return `${mr} > ${mc}: по оценке тетради следующая единица выгодна — снизь цену и закупи больше.`;
@@ -565,35 +567,60 @@ function lavkaMakeEvent(st, id, rng = Math.random) {
 const LAVKA_EXAM_FROM_DAY = 22;
 const LAVKA_EXAM_KINDS = [
   { kind: "normal", title: "Обычный день", events: [] },
-  { kind: "shift", title: "Сдвиг спроса", events: ["heat", "rain", "festival"] },
+  /* Фестиваль не меняет P* (урок «закупи больше») — для экзамена по цене берём сдвиги готовности платить. */
+  { kind: "shift", title: "Сдвиг спроса", events: ["heat", "rain"] },
   { kind: "policy", title: "Политика", events: ["tax", "ceiling"] },
+  { kind: "capacity", title: "Мощность", events: [], note: "Суббота, а помощник заболел — у прилавка только базовые места." },
 ];
+/* Медаль: среднее по дням ≥ min И каждый день ≥ floor — провал одной идеи не прячется за хорошими днями. */
 const LAVKA_MEDALS = [
-  { id: "gold", min: 0.95, emoji: "🥇", title: "Золото" },
-  { id: "silver", min: 0.85, emoji: "🥈", title: "Серебро" },
-  { id: "bronze", min: 0.7, emoji: "🥉", title: "Бронза" },
+  { id: "gold", min: 0.95, floor: 0.85, emoji: "🥇", title: "Золото" },
+  { id: "silver", min: 0.85, floor: 0.7, emoji: "🥈", title: "Серебро" },
+  { id: "bronze", min: 0.7, floor: 0.5, emoji: "🥉", title: "Бронза" },
 ];
 const lavkaExamOpen = (st) => (st.chapter || 1) >= LAVKA_CHAPTERS.length && st.day >= LAVKA_EXAM_FROM_DAY;
-const lavkaExamMedal = (eff) => LAVKA_MEDALS.find((m) => eff >= m.min - 1e-12) || null;
+const lavkaExamMedal = (eff, minDay = eff) => LAVKA_MEDALS.find((m) => eff >= m.min - 1e-12 && minDay >= m.floor - 1e-12) || null;
+/* Итог экзамена: среднее, худший день и медаль; null — экзамен недействителен. */
+function lavkaExamResult(exam) {
+  const eff = lavkaExamEfficiency(exam);
+  if (eff == null) return null;
+  const days = exam.results.map((r) => r.playerMargin / r.botMargin);
+  const minDay = Math.min(...days);
+  return { eff, minDay, days, medal: lavkaExamMedal(eff, minDay) };
+}
 
-/* Состояние лавки в i-й день экзамена: без запасов, без кассового ограничения, событие сценария. */
+/* Состояние лавки в i-й день экзамена: без запасов, без кассового ограничения, событие сценария.
+   День недели сдвигается от попытки к попытке (day0), чтобы пересдача не повторяла тот же рынок.
+   В сценарии «мощность» помощника нет. */
 function lavkaExamDayState(st, exam, i, settings) {
+  const d = exam.days[i] || {};
+  let day = (exam.day0 || st.day) + i;
+  if (d.kind === "capacity") while (lavkaWeekday(day) !== 5) day++; // суббота: людно, прилавок — узкое место
   return {
-    ...st, day: st.day + i, event: exam.days[i].event, stock: { main: {}, office: {} },
+    ...st, day, event: d.event || null, stock: { main: {}, office: {} },
+    upgrades: d.kind === "capacity" ? { ...st.upgrades, helper: false } : st.upgrades,
     cash: 1e7, debt: 0, settings: settings || exam.settings, last: null, examActive: null,
   };
 }
 
 function lavkaExamNew(st, seed) {
   const rng = lavkaRng(seed);
-  const exam = { seed, days: [], results: [], settings: JSON.parse(JSON.stringify(st.settings)) };
+  const attempts = (st.examBest && st.examBest.attempts) || 0;
+  const exam = { seed, day0: st.day + 3 * attempts, days: [], results: [], settings: JSON.parse(JSON.stringify(st.settings)) };
   LAVKA_EXAM_KINDS.forEach((k, i) => {
     let event = null;
     if (k.events.length) {
       const id = lavkaRand(k.events, rng);
-      event = { ...lavkaMakeEvent(lavkaExamDayState(st, { ...exam, days: [...exam.days, { event: null }] }, i), id, rng), daysLeft: 1 };
+      const day = lavkaExamDayState(st, { ...exam, days: [...exam.days, { kind: k.kind, event: null }] }, i);
+      event = { ...lavkaMakeEvent(day, id, rng), daysLeft: 1 };
+      /* Экзаменационный акциз — на все товары, t = 40% от (A/B − MC): прибыль у вершины плоская, и только
+         заметный налог делает ошибку «не перенёс t/2» дорогой (≈ 45% маржи), а не копеечной. */
+      if (id === "tax") {
+        delete event.product;
+        event.taxes = Object.fromEntries(lavkaUnlocked(day).map((pid) => { const m = lavkaParams(day, "main", pid, true); return [pid, Math.round(0.4 * (m.choke - m.mc))]; }));
+      }
     }
-    exam.days.push({ kind: k.kind, title: k.title, event, seed: Math.floor(rng() * 2 ** 31) });
+    exam.days.push({ kind: k.kind, title: k.title, note: k.note || null, event, seed: Math.floor(rng() * 2 ** 31) });
   });
   return exam;
 }
@@ -612,10 +639,10 @@ function lavkaExamBotSettings(dayState) {
     return s;
   };
   let best = null, bestProfit = -Infinity;
-  for (const mult of [0.9, 0.94, 0.98, 1.02, 1.06, 1.1, 1.14]) {
+  for (const mult of [0.9, 0.93, 0.96, 0.99, 1.02, 1.05, 1.08, 1.11, 1.14]) {
     const s = make(mult), rng = lavkaRng(99991);
     let sum = 0;
-    for (let n = 0; n < 60; n++) sum += lavkaSimulate({ ...dayState, settings: s }, rng).report.profit;
+    for (let n = 0; n < 40; n++) sum += lavkaSimulate({ ...dayState, settings: s }, rng).report.profit;
     if (sum > bestProfit) { bestProfit = sum; best = s; }
   }
   return best;
@@ -626,21 +653,25 @@ function lavkaExamPlayDay(st, exam, settings) {
   const report = lavkaSimulate(lavkaExamDayState(st, exam, i, settings), lavkaRng(d.seed)).report;
   const base = lavkaExamDayState(st, exam, i);
   const bot = lavkaSimulate({ ...base, settings: lavkaExamBotSettings(base) }, lavkaRng(d.seed)).report;
-  const results = [...exam.results, { player: report.profit, bot: bot.profit, report: { ...report, tokens: undefined } }];
+  /* Маржа = прибыль до постоянных издержек: аренду и зарплату игрок на экзамене не выбирает. */
+  const results = [...exam.results, { player: report.profit, bot: bot.profit, playerMargin: report.profit + report.fixed,
+    botMargin: bot.profit + bot.fixed, report: { ...report, tokens: undefined } }];
   const next = { ...exam, results, settings: JSON.parse(JSON.stringify(settings)) };
   return { exam: next, report, done: results.length === exam.days.length };
 }
 
+/* Эффективность — среднее по дням отношения маржи игрока к марже бота: каждый сценарий весит одинаково.
+   null — экзамен недействителен (у бота нет положительной маржи). */
 function lavkaExamEfficiency(exam) {
-  const p = exam.results.reduce((s, r) => s + r.player, 0), b = exam.results.reduce((s, r) => s + r.bot, 0);
-  return b > 0 ? p / b : 0;
+  if (!exam.results.length || exam.results.some((r) => !(r.botMargin > 0))) return null;
+  return exam.results.reduce((s, r) => s + r.playerMargin / r.botMargin, 0) / exam.results.length;
 }
 
 /* Итог: касса и дни основной игры не меняются; в зачёт — лучшая попытка. */
 function lavkaExamFinish(st, exam) {
-  const eff = lavkaExamEfficiency(exam), medal = lavkaExamMedal(eff);
+  const res = lavkaExamResult(exam), eff = res ? res.eff : null, medal = res ? res.medal : null;
   const prev = st.examBest || { eff: -Infinity, medal: null, attempts: 0 };
-  const better = eff > prev.eff;
+  const better = eff != null && eff > prev.eff;
   return {
     ...st, examActive: null,
     examBest: { eff: better ? eff : prev.eff, medal: better ? (medal ? medal.id : null) : prev.medal, day: better ? st.day : prev.day, attempts: (prev.attempts || 0) + 1 },
@@ -757,6 +788,6 @@ export {
   lavkaPlan, lavkaVerdict, lavkaLoad, lavkaFitStatus, LAVKA_MODEL_VERSION, LAVKA_SIGN_MULT,
   lavkaCeilingParadox, lavkaShownLambda, LAVKA_LAMBDA_SHOWN,
   lavkaRng, lavkaMakeEvent, LAVKA_EXAM_FROM_DAY, LAVKA_EXAM_KINDS, LAVKA_MEDALS, lavkaExamOpen, lavkaExamMedal,
-  lavkaExamDayState, lavkaExamNew, lavkaExamBotSettings, lavkaExamPlayDay, lavkaExamEfficiency, lavkaExamFinish,
+  lavkaExamDayState, lavkaExamNew, lavkaExamBotSettings, lavkaExamPlayDay, lavkaExamEfficiency, lavkaExamFinish, lavkaExamResult,
   LAVKA_CHAPTERS, LAVKA_ORACLE_DAYS, lavkaChapterOf, lavkaUpgradeOpen, lavkaChapterByDay,
 };

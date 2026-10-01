@@ -11,7 +11,7 @@ import {
   lavkaVerdict, lavkaLoad, lavkaShownLambda,
   LAVKA_CHAPTERS, LAVKA_ORACLE_DAYS, lavkaChapterOf, lavkaUpgradeOpen,
   LAVKA_MEDALS, LAVKA_EXAM_FROM_DAY, lavkaExamOpen, lavkaExamMedal, lavkaExamDayState, lavkaExamNew, lavkaExamPlayDay,
-  lavkaExamEfficiency, lavkaExamFinish,
+  lavkaExamEfficiency, lavkaExamFinish, lavkaExamResult,
 } from "./model.js";
 function LavkaStepper({ value, onChange, step = 1, min = 0, max = 9999, suffix }) {
   const btn = { background: COLORS.paperDeep, color: COLORS.ink, border: `1px solid ${COLORS.line}` };
@@ -526,32 +526,45 @@ function LavkaExam({ st, update }) {
     <LavkaCard tint={COLORS.blueSoft}>
       <p className="font-semibold">🎓 Экзамен уровня 1{done ? " — итог" : ` · день ${i + 1} из ${exam.days.length}`}</p>
       <p className="text-sm mt-1" style={{ color: COLORS.ink }}>
-        Три дня без подсказок: обычный день, сдвиг спроса и политика. Тетрадью пользоваться можно.
-        Оценка — эффективность: твоя прибыль, делённая на прибыль бота-оптимизатора, прожившего те же дни с той же удачей.
-        Это копия лавки: касса и дни основной игры не меняются.
+        Четыре дня без подсказок: обычный день, сдвиг спроса, политика и мощность. Тетрадью пользоваться можно.
+        Оценка — эффективность: твоя маржа (до аренды и зарплат), делённая на маржу бота-оптимизатора, прожившего тот же день
+        с той же удачей; каждый день весит одинаково. Это копия лавки: касса и дни основной игры не меняются.
       </p>
     </LavkaCard>
   );
 
   if (done) {
-    const eff = lavkaExamEfficiency(exam), medal = lavkaExamMedal(eff);
+    const res = lavkaExamResult(exam), medal = res && res.medal;
     const best = st.examBest;
     return (
       <div className="ms-rise">
         {head}
         <LavkaCard tint={medal ? COLORS.sageSoft : COLORS.rustSoft}>
-          <p className="text-3xl" style={{ fontFamily: LAVKA_MONO, fontWeight: 700 }}>{Math.round(eff * 100)}%</p>
-          <p className="text-base mt-1 font-semibold">{medal ? `${medal.emoji} ${medal.title}` : "Без медали (нужно ≥ 70%)"}</p>
+          {res ? (
+            <>
+              <p className="text-3xl" style={{ fontFamily: LAVKA_MONO, fontWeight: 700 }}>{Math.round(res.eff * 100)}%</p>
+              <p className="text-base mt-1 font-semibold">{medal ? `${medal.emoji} ${medal.title}` : "Без медали"}</p>
+              <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Худший день: {Math.round(res.minDay * 100)}%. Медали: 🥉 среднее ≥ 70% и каждый день ≥ 50%, 🥈 ≥ 85% и ≥ 70%, 🥇 ≥ 95% и ≥ 85%.</p>
+            </>
+          ) : <p className="text-base font-semibold">Экзамен недействителен: у бота не вышло положительной маржи. Пересдай.</p>}
           <div className="mt-3">
             {exam.days.map((d, k) => (
               <div key={k} className="flex justify-between gap-2 text-sm py-1" style={{ borderTop: k ? `1px solid ${COLORS.line}` : "none" }}>
                 <span>{k + 1}. {d.title}{d.event ? ` — ${LAVKA_EVENTS[d.event.id].emoji} ${LAVKA_EVENTS[d.event.id].title}` : ""}</span>
-                <span style={{ fontFamily: LAVKA_MONO, whiteSpace: "nowrap" }}>{lavkaRub(exam.results[k].player)} / {lavkaRub(exam.results[k].bot)}</span>
+                <span style={{ fontFamily: LAVKA_MONO, whiteSpace: "nowrap" }}>{res ? `${Math.round(res.days[k] * 100)}%` : lavkaRub(exam.results[k].player)}</span>
               </div>
             ))}
-            <p className="text-xs mt-2" style={{ color: COLORS.inkSoft }}>ты / бот-оптимизатор. Медали: 🥉 ≥ 70%, 🥈 ≥ 85%, 🥇 ≥ 95%.</p>
           </div>
           {best && <p className="text-xs mt-2" style={{ color: COLORS.inkSoft }}>Лучший результат до этой попытки: {Math.round(best.eff * 100)}%{best.medal ? ` ${medalOf(best.medal).emoji}` : ""}, попыток: {best.attempts}.</p>}
+        </LavkaCard>
+        <LavkaCard>
+          <p className="font-semibold mb-1">Разбор по дням</p>
+          {exam.results.map((r, k) => (
+            <div key={k} className="mt-2">
+              <p className="text-sm font-semibold">{k + 1}. {exam.days[k].title}: {lavkaRub(r.player)}</p>
+              {r.report.rows.map((row) => <p key={row.point + row.pid} className="text-xs mt-1" style={{ color: COLORS.ink }}>{LAVKA_PRODUCTS[row.pid].emoji} {lavkaVerdict(row)}</p>)}
+            </div>
+          ))}
         </LavkaCard>
         <button onClick={() => update((s) => lavkaExamFinish(s, s.examActive))} className="w-full py-3.5 rounded-full text-base"
           style={{ background: COLORS.onyx, color: COLORS.onyxText, fontWeight: 700 }}>Вернуться в лавку</button>
@@ -568,12 +581,11 @@ function LavkaExam({ st, update }) {
         <LavkaCard tint={last.profit >= 0 ? COLORS.sageSoft : COLORS.rustSoft}>
           <p className="text-sm" style={{ color: COLORS.inkSoft }}>Экзамен, день {i} закрыт</p>
           <p className="text-2xl mt-1" style={{ fontFamily: LAVKA_MONO, fontWeight: 700, color: last.profit >= 0 ? COLORS.sage : COLORS.rust }}>{last.profit >= 0 ? "+" : ""}{lavkaRub(last.profit)}</p>
-          {last.rows.map((r) => (
-            <p key={r.point + r.pid} className="text-xs mt-1.5" style={{ color: COLORS.ink }}>{LAVKA_PRODUCTS[r.pid].emoji} {lavkaVerdict(r)}</p>
-          ))}
+          <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Разбор с вердиктами — в конце экзамена.</p>
         </LavkaCard>
       )}
       <p className="text-sm mb-2 font-semibold">День {i + 1}: {exam.days[i].title}</p>
+      {exam.days[i].note && <LavkaCard tint={COLORS.amberSoft}><p className="text-sm">🤒 {exam.days[i].note} Мест: {LAVKA_CAPACITY} на точку.</p></LavkaCard>}
       <LavkaEventCard st={day} />
       {points.length > 1 && (
         <div className="flex gap-1.5 mb-3">
@@ -589,7 +601,7 @@ function LavkaExam({ st, update }) {
         <LavkaProductRow key={"exam" + i + curPoint + pid} st={day} point={curPoint} pid={pid} fit={nbFit(curPoint, pid)} onSet={(patch) => setProd(curPoint, pid, patch)} />
       ))}
       <p className="text-xs mb-3" style={{ color: COLORS.inkSoft }}>
-        Пропускная способность: {LAVKA_CAPACITY + (st.upgrades.helper ? LAVKA_HELPER_CAP : 0)} покупателей в день на точку. Запасов с прошлых дней нет, касса на экзамене не ограничена.
+        Пропускная способность: {LAVKA_CAPACITY + (day.upgrades.helper ? LAVKA_HELPER_CAP : 0)} покупателей в день на точку · {LAVKA_WEEKDAYS[lavkaWeekday(day.day)]}. Запасов с прошлых дней нет, касса на экзамене не ограничена.
       </p>
       <button onClick={play} className="w-full py-3.5 rounded-full text-base" style={{ background: COLORS.onyx, color: COLORS.onyxText, fontWeight: 700 }}>
         Завершить день {i + 1} из {exam.days.length}
@@ -737,7 +749,7 @@ function LavkaScreen({ onBack, theme, onToggleTheme }) {
             {lavkaExamOpen(st) && (
               <LavkaCard tint={COLORS.blueSoft}>
                 <p className="font-semibold">🎓 Экзамен уровня 1 открыт</p>
-                <p className="text-sm mt-1" style={{ color: COLORS.ink }}>3 дня без подсказок на копии лавки: обычный день, сдвиг спроса, политика. Касса не меняется, пересдавать можно сколько угодно.</p>
+                <p className="text-sm mt-1" style={{ color: COLORS.ink }}>4 дня без подсказок на копии лавки: обычный день, сдвиг спроса, политика, мощность. Касса не меняется, пересдавать можно сколько угодно — каждый раз другие дни.</p>
                 {st.examBest && <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Лучший результат: {Math.round(st.examBest.eff * 100)}%{st.examBest.medal ? " " + LAVKA_MEDALS.find((m) => m.id === st.examBest.medal).emoji : ""} · попыток: {st.examBest.attempts}</p>}
                 <button onClick={() => update((s) => ({ ...s, examActive: lavkaExamNew(s, Math.floor(Math.random() * 2 ** 31)) }))} className="mt-3 text-sm px-4 py-2 rounded-full"
                   style={{ background: COLORS.onyx, color: COLORS.onyxText, fontWeight: 600 }}>Сдать экзамен</button>

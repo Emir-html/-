@@ -61,19 +61,19 @@ function run(fn, seed) {
   }
   st = { ...st, chapter: 3, day: Math.max(st.day, L.LAVKA_EXAM_FROM_DAY) };
   let ex = L.lavkaExamNew(st, seed * 7 + 1);
-  for (let i = 0; i < 3; i++) ex = L.lavkaExamPlayDay(st, ex, fn(L.lavkaExamDayState(st, ex, i))).exam;
-  return L.lavkaExamEfficiency(ex);
+  for (let i = 0; i < ex.days.length; i++) ex = L.lavkaExamPlayDay(st, ex, fn(L.lavkaExamDayState(st, ex, i))).exam;
+  return L.lavkaExamResult(ex);
 }
 
 const rows = [];
 for (const [name, fn] of Object.entries(strategies)) {
-  const effs = [];
-  for (let i = 0; i < RUNS; i++) effs.push(run(fn, 1000 + i));
-  effs.sort((a, b) => a - b);
-  const share = (id) => Math.round((100 * effs.filter((e) => L.lavkaExamMedal(e)?.id === id).length) / RUNS) + "%";
+  const res = [];
+  for (let i = 0; i < RUNS; i++) res.push(run(fn, 1000 + i));
+  const effs = res.map((r) => (r ? r.eff : 0)).sort((a, b) => a - b);
+  const share = (id) => Math.round((100 * res.filter((r) => (r?.medal?.id || null) === id).length) / RUNS) + "%";
   rows.push({ стратегия: name, "эффективность, средн.": (effs.reduce((s, e) => s + e, 0) / RUNS).toFixed(3),
-    медиана: effs[Math.floor(RUNS / 2)].toFixed(3), "🥇": share("gold"), "🥈": share("silver"), "🥉": share("bronze"),
-    "без медали": Math.round((100 * effs.filter((e) => !L.lavkaExamMedal(e)).length) / RUNS) + "%" });
+    медиана: effs[Math.floor(RUNS / 2)].toFixed(3), "худший день, медиана": res.map((r) => (r ? r.minDay : 0)).sort((a, b) => a - b)[Math.floor(RUNS / 2)].toFixed(3),
+    "🥇": share("gold"), "🥈": share("silver"), "🥉": share("bronze"), "без медали": share(null) });
 }
 console.log(`Экзамен уровня 1, прогонов: ${RUNS}`);
 console.table(rows);

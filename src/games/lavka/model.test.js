@@ -412,9 +412,9 @@ test("экзамен: 3 сценария (обычный / сдвиг спрос
   const st = examReady();
   const e1 = L.lavkaExamNew(st, 101), e2 = L.lavkaExamNew(st, 101);
   assert.deepEqual(e1.days, e2.days);
-  assert.deepEqual(e1.days.map((d) => d.kind), ["normal", "shift", "policy"]);
+  assert.deepEqual(e1.days.map((d) => d.kind), ["normal", "shift", "policy", "capacity"]);
   assert.equal(e1.days[0].event, null);
-  assert.ok(["heat", "rain", "festival"].includes(e1.days[1].event.id));
+  assert.ok(["heat", "rain"].includes(e1.days[1].event.id));
   assert.ok(["tax", "ceiling"].includes(e1.days[2].event.id));
   const kinds = new Set();
   for (let s = 1; s < 60; s++) kinds.add(L.lavkaExamNew(st, s).days[2].event.id);
@@ -424,12 +424,12 @@ test("экзамен: 3 сценария (обычный / сдвиг спрос
 test("экзамен: игра как бот даёт эффективность 100%, плохие цены — без медали; касса не меняется", () => {
   const st = examReady();
   let ex = L.lavkaExamNew(st, 5);
-  for (let i = 0; i < 3; i++) ex = L.lavkaExamPlayDay(st, ex, L.lavkaExamBotSettings(L.lavkaExamDayState(st, ex, i))).exam;
-  assert.equal(ex.results.length, 3);
+  for (let i = 0; i < 4; i++) ex = L.lavkaExamPlayDay(st, ex, L.lavkaExamBotSettings(L.lavkaExamDayState(st, ex, i))).exam;
+  assert.equal(ex.results.length, 4);
   near(L.lavkaExamEfficiency(ex), 1, 1e-9);
   assert.equal(L.lavkaExamMedal(1).id, "gold");
   let bad = L.lavkaExamNew(st, 5);
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 4; i++) {
     const s = JSON.parse(JSON.stringify(L.lavkaExamDayState(st, bad, i).settings));
     for (const pid of L.LAVKA_PIDS) s.main[pid] = { price: L.LAVKA_PRODUCTS[pid].c + 3, order: 150 };
     bad = L.lavkaExamPlayDay(st, bad, s).exam;
@@ -443,9 +443,54 @@ test("экзамен: игра как бот даёт эффективность
   assert.equal(worse.examBest.medal, "gold", "в зачёт идёт лучшая попытка"); assert.equal(worse.examBest.attempts, 2);
 });
 
-test("медали: бронза ≥ 70%, серебро ≥ 85%, золото ≥ 95%", () => {
+test("медали: бронза ≥ 70%, серебро ≥ 85%, золото ≥ 95% — и порог каждого дня", () => {
+  assert.equal(L.lavkaExamMedal(0.9, 0.6).id, "bronze", "провал одного дня не даёт серебра");
+  assert.equal(L.lavkaExamMedal(0.97, 0.8).id, "silver");
   assert.equal(L.lavkaExamMedal(0.69), null);
   assert.equal(L.lavkaExamMedal(0.7).id, "bronze");
   assert.equal(L.lavkaExamMedal(0.85).id, "silver");
   assert.equal(L.lavkaExamMedal(0.95).id, "gold");
+});
+
+/* Экзамен должен различать понимание: стратегии, знающие обычный спрос, но игнорирующие одну идею. */
+const examWith = (fn, seeds = 12) => {
+  let sum = 0;
+  for (let k = 0; k < seeds; k++) {
+    const st = examReady(); st.upgrades.coffee = true; st.upgrades.helper = true;
+    let ex = L.lavkaExamNew(st, 500 + k);
+    for (let i = 0; i < ex.days.length; i++) ex = L.lavkaExamPlayDay(st, ex, fn(L.lavkaExamDayState(st, ex, i), ex.days[i])).exam;
+    const res = L.lavkaExamResult(ex);
+    sum += res.medal && (res.medal.id === "gold" || res.medal.id === "silver") ? 1 : 0;
+  }
+  return sum / seeds; // доля попыток с серебром или золотом
+};
+const planWith = (day, base) => {
+  const s = JSON.parse(JSON.stringify(day.settings));
+  for (const p of L.lavkaOpenPoints(day)) {
+    const plan = L.lavkaPlan(base, p);
+    for (const pid of L.lavkaUnlocked(day)) s[p][pid] = { price: Math.round(plan.rows[pid].pOpt), order: Math.round(plan.rows[pid].qOpt * 1.02) };
+  }
+  return s;
+};
+
+test("экзамен: игнор событий (сдвиг, налог, потолок) — серебро почти никогда", () => {
+  const share = examWith((day) => planWith(day, { ...day, event: null }));
+  assert.ok(share <= 0.2, `игнор событий: серебро+ в ${share * 100}% попыток`);
+});
+
+test("экзамен: игнор мощности (MR = MC без λ) — серебро почти никогда", () => {
+  const share = examWith((day) => {
+    const s = JSON.parse(JSON.stringify(day.settings));
+    for (const p of L.lavkaOpenPoints(day)) for (const pid of L.lavkaUnlocked(day)) { const m = L.lavkaParams(day, p, pid); s[p][pid] = { price: Math.round(m.pOpt), order: Math.round(m.qOpt * 1.02) }; }
+    return s;
+  });
+  assert.ok(share <= 0.2, `игнор λ: серебро+ в ${share * 100}% попыток`);
+});
+
+test("экзамен: день недели меняется от попытки к попытке, при Σ бота ≤ 0 экзамен недействителен", () => {
+  const st = examReady();
+  const d0 = L.lavkaExamDayState(st, L.lavkaExamNew(st, 1), 0).day;
+  const d1 = L.lavkaExamDayState({ ...st, examBest: { eff: 0.5, medal: null, attempts: 1 } }, L.lavkaExamNew({ ...st, examBest: { attempts: 1 } }, 1), 0).day;
+  assert.notEqual(d0 % 7, d1 % 7);
+  assert.equal(L.lavkaExamEfficiency({ days: [{}], results: [{ player: 100, bot: -5, playerMargin: 100, botMargin: -5 }] }), null);
 });
