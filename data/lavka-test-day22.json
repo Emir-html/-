@@ -1,0 +1,723 @@
+{
+ "app": "mirstudy",
+ "version": 2,
+ "exportedAt": "2026-10-01T19:36:29.748Z",
+ "summary": "Тестовое сохранение «Лавки»: день 22, глава 3, экзамен открыт",
+ "data": {
+  "lavka-save": {
+   "v": 1,
+   "model": 2,
+   "at": 1790883389748,
+   "day": 22,
+   "chapter": 3,
+   "cash": 85590,
+   "debt": 0,
+   "upgrades": {
+    "analyst": true,
+    "coffee": true,
+    "helper": true,
+    "fridge": true
+   },
+   "settings": {
+    "main": {
+     "lemonade": {
+      "price": 59,
+      "order": 58
+     },
+     "croissant": {
+      "price": 93,
+      "order": 114
+     },
+     "coffee": {
+      "price": 129,
+      "order": 47
+     },
+     "icecream": {
+      "price": 50,
+      "order": 40
+     }
+    },
+    "office": {
+     "lemonade": {
+      "price": 40,
+      "order": 50
+     },
+     "croissant": {
+      "price": 45,
+      "order": 50
+     },
+     "coffee": {
+      "price": 100,
+      "order": 30
+     },
+     "icecream": {
+      "price": 50,
+      "order": 40
+     }
+    }
+   },
+   "stock": {
+    "main": {
+     "lemonade": 16,
+     "croissant": 12,
+     "coffee": 7
+    },
+    "office": {}
+   },
+   "event": {
+    "id": "blogger",
+    "daysLeft": 2
+   },
+   "obs": {
+    "main": {
+     "lemonade": [
+      {
+       "P": 45,
+       "D": 70,
+       "k": 1,
+       "day": 1,
+       "base": true
+      },
+      {
+       "P": 50,
+       "D": 53,
+       "k": 0.95,
+       "day": 2,
+       "base": true
+      },
+      {
+       "P": 56,
+       "D": 44,
+       "k": 0.97,
+       "day": 3,
+       "base": true
+      },
+      {
+       "P": 44,
+       "D": 71,
+       "k": 0.99,
+       "day": 4,
+       "base": true
+      },
+      {
+       "P": 80,
+       "D": 77,
+       "k": 1.0263000000000002,
+       "day": 5,
+       "base": false
+      },
+      {
+       "P": 91,
+       "D": 74,
+       "k": 1.2389,
+       "day": 6,
+       "base": false
+      },
+      {
+       "P": 49,
+       "D": 69,
+       "k": 1.21625,
+       "day": 7,
+       "base": true
+      },
+      {
+       "P": 50,
+       "D": 58,
+       "k": 0.923,
+       "day": 8,
+       "base": true
+      },
+      {
+       "P": 56,
+       "D": 44,
+       "k": 0.943,
+       "day": 9,
+       "base": true
+      },
+      {
+       "P": 78,
+       "D": 85,
+       "k": 0.963,
+       "day": 10,
+       "base": false
+      },
+      {
+       "P": 82,
+       "D": 64,
+       "k": 0.896,
+       "day": 11,
+       "base": false
+      },
+      {
+       "P": 65,
+       "D": 33,
+       "k": 1.0076,
+       "day": 12,
+       "base": true
+      },
+      {
+       "P": 44,
+       "D": 87,
+       "k": 1.2168,
+       "day": 13,
+       "base": true
+      },
+      {
+       "P": 50,
+       "D": 65,
+       "k": 1.12125,
+       "day": 14,
+       "base": true
+      },
+      {
+       "P": 56,
+       "D": 42,
+       "k": 0.917,
+       "day": 15,
+       "base": true
+      },
+      {
+       "P": 44,
+       "D": 69,
+       "k": 0.937,
+       "day": 16,
+       "base": true
+      },
+      {
+       "P": 34,
+       "D": 25,
+       "k": 0.902,
+       "day": 17,
+       "base": false
+      },
+      {
+       "P": 40,
+       "D": 15,
+       "k": 0.922,
+       "day": 18,
+       "base": false
+      },
+      {
+       "P": 31,
+       "D": 106,
+       "k": 1.0362,
+       "day": 19,
+       "base": true
+      },
+      {
+       "P": 37,
+       "D": 95,
+       "k": 1.1765,
+       "day": 20,
+       "base": true
+      },
+      {
+       "P": 59,
+       "D": 45,
+       "k": 1.15625,
+       "day": 21,
+       "base": true
+      }
+     ],
+     "croissant": [
+      {
+       "P": 50,
+       "D": 73,
+       "k": 1,
+       "day": 1,
+       "base": true
+      },
+      {
+       "P": 55,
+       "D": 57,
+       "k": 0.95,
+       "day": 2,
+       "base": true
+      },
+      {
+       "P": 61,
+       "D": 45,
+       "k": 0.97,
+       "day": 3,
+       "base": true
+      },
+      {
+       "P": 49,
+       "D": 76,
+       "k": 0.99,
+       "day": 4,
+       "base": true
+      },
+      {
+       "P": 65,
+       "D": 36,
+       "k": 1.0263000000000002,
+       "day": 5,
+       "base": true
+      },
+      {
+       "P": 76,
+       "D": 12,
+       "k": 1.2389,
+       "day": 6,
+       "base": true
+      },
+      {
+       "P": 54,
+       "D": 75,
+       "k": 1.21625,
+       "day": 7,
+       "base": true
+      },
+      {
+       "P": 55,
+       "D": 57,
+       "k": 0.923,
+       "day": 8,
+       "base": true
+      },
+      {
+       "P": 61,
+       "D": 48,
+       "k": 0.943,
+       "day": 9,
+       "base": true
+      },
+      {
+       "P": 63,
+       "D": 41,
+       "k": 0.963,
+       "day": 10,
+       "base": true
+      },
+      {
+       "P": 67,
+       "D": 30,
+       "k": 0.896,
+       "day": 11,
+       "base": true
+      },
+      {
+       "P": 70,
+       "D": 26,
+       "k": 1.0076,
+       "day": 12,
+       "base": true
+      },
+      {
+       "P": 49,
+       "D": 97,
+       "k": 1.2168,
+       "day": 13,
+       "base": true
+      },
+      {
+       "P": 55,
+       "D": 72,
+       "k": 1.12125,
+       "day": 14,
+       "base": true
+      },
+      {
+       "P": 61,
+       "D": 46,
+       "k": 0.917,
+       "day": 15,
+       "base": true
+      },
+      {
+       "P": 49,
+       "D": 69,
+       "k": 0.937,
+       "day": 16,
+       "base": true
+      },
+      {
+       "P": 55,
+       "D": 54,
+       "k": 0.902,
+       "day": 17,
+       "base": true
+      },
+      {
+       "P": 61,
+       "D": 43,
+       "k": 0.922,
+       "day": 18,
+       "base": true
+      },
+      {
+       "P": 49,
+       "D": 85,
+       "k": 1.0362,
+       "day": 19,
+       "base": true
+      },
+      {
+       "P": 56,
+       "D": 71,
+       "k": 1.1765,
+       "day": 20,
+       "base": true
+      },
+      {
+       "P": 93,
+       "D": 103,
+       "k": 1.15625,
+       "day": 21,
+       "base": false
+      }
+     ],
+     "coffee": [
+      {
+       "P": 113,
+       "D": 26,
+       "k": 0.963,
+       "day": 10,
+       "base": false
+      },
+      {
+       "P": 117,
+       "D": 23,
+       "k": 0.896,
+       "day": 11,
+       "base": false
+      },
+      {
+       "P": 135,
+       "D": 33,
+       "k": 1.0076,
+       "day": 12,
+       "base": true
+      },
+      {
+       "P": 114,
+       "D": 55,
+       "k": 1.2168,
+       "day": 13,
+       "base": true
+      },
+      {
+       "P": 120,
+       "D": 46,
+       "k": 1.12125,
+       "day": 14,
+       "base": true
+      },
+      {
+       "P": 126,
+       "D": 35,
+       "k": 0.917,
+       "day": 15,
+       "base": true
+      },
+      {
+       "P": 114,
+       "D": 42,
+       "k": 0.937,
+       "day": 16,
+       "base": true
+      },
+      {
+       "P": 150,
+       "D": 49,
+       "k": 0.902,
+       "day": 17,
+       "base": false
+      },
+      {
+       "P": 156,
+       "D": 46,
+       "k": 0.922,
+       "day": 18,
+       "base": false
+      },
+      {
+       "P": 114,
+       "D": 42,
+       "k": 1.0362,
+       "day": 19,
+       "base": true
+      },
+      {
+       "P": 121,
+       "D": 48,
+       "k": 1.1765,
+       "day": 20,
+       "base": true
+      },
+      {
+       "P": 129,
+       "D": 38,
+       "k": 1.15625,
+       "day": 21,
+       "base": true
+      }
+     ],
+     "icecream": []
+    },
+    "office": {
+     "lemonade": [],
+     "croissant": [],
+     "coffee": [],
+     "icecream": []
+    }
+   },
+   "history": [
+    {
+     "day": 1,
+     "profit": 2095
+    },
+    {
+     "day": 2,
+     "profit": 2325
+    },
+    {
+     "day": 3,
+     "profit": 1669
+    },
+    {
+     "day": 4,
+     "profit": 1976
+    },
+    {
+     "day": 5,
+     "profit": 5180
+    },
+    {
+     "day": 6,
+     "profit": 4386
+    },
+    {
+     "day": 7,
+     "profit": 2630
+    },
+    {
+     "day": 8,
+     "profit": 2645
+    },
+    {
+     "day": 9,
+     "profit": 1952
+    },
+    {
+     "day": 10,
+     "profit": 5914
+    },
+    {
+     "day": 11,
+     "profit": 6229
+    },
+    {
+     "day": 12,
+     "profit": 4310
+    },
+    {
+     "day": 13,
+     "profit": 6242
+    },
+    {
+     "day": 14,
+     "profit": 6310
+    },
+    {
+     "day": 15,
+     "profit": 4148
+    },
+    {
+     "day": 16,
+     "profit": 4561
+    },
+    {
+     "day": 17,
+     "profit": 5880
+    },
+    {
+     "day": 18,
+     "profit": 5229
+    },
+    {
+     "day": 19,
+     "profit": 5254
+    },
+    {
+     "day": 20,
+     "profit": 6079
+    },
+    {
+     "day": 21,
+     "profit": 9776
+    }
+   ],
+   "last": {
+    "day": 21,
+    "rows": [
+     {
+      "point": "main",
+      "pid": "lemonade",
+      "P": 59,
+      "priceSet": 59,
+      "D": 45,
+      "S": 45,
+      "lostStock": 0,
+      "lostQueue": 0,
+      "carried": 8,
+      "order": 58,
+      "have": 66,
+      "carry": 16,
+      "spoiled": 5,
+      "rev": 2655,
+      "cost": 1160,
+      "tax": 0,
+      "cBuy": 20,
+      "k": 1.15625,
+      "mr": 38.90133655278731,
+      "mc": 20,
+      "el": 2.9355185808727122,
+      "dExp": 48.5625,
+      "cs": 473.13677067937937,
+      "ps": 1755,
+      "dwl": 1871.4283600238327,
+      "pOpt": 50,
+      "qOpt": 69.375,
+      "mode": "notebook",
+      "why": null,
+      "mrTrue": 38,
+      "cap": null,
+      "comp": null,
+      "base": true,
+      "capacityBound": false,
+      "lambda": 5.305019305019308,
+      "pBest": 52.65250965250966,
+      "qBest": 63.241071428571416
+     },
+     {
+      "point": "main",
+      "pid": "croissant",
+      "P": 93,
+      "priceSet": 93,
+      "D": 103,
+      "S": 103,
+      "lostStock": 0,
+      "lostQueue": 0,
+      "carried": 4,
+      "order": 114,
+      "have": 118,
+      "carry": 12,
+      "spoiled": 3,
+      "rev": 9579,
+      "cost": 3420,
+      "tax": 0,
+      "cBuy": 30,
+      "k": 1.15625,
+      "mr": null,
+      "mc": 30,
+      "el": null,
+      "dExp": 99.00390625,
+      "cs": null,
+      "ps": 6489,
+      "dwl": null,
+      "pOpt": 84.33333333333333,
+      "qOpt": 117.79296875,
+      "mode": "facts",
+      "why": "event",
+      "mrTrue": 47.33333333333334,
+      "cap": null,
+      "comp": null,
+      "base": false,
+      "capacityBound": false,
+      "lambda": 5.305019305019308,
+      "pBest": 86.98584298584298,
+      "qBest": 112.04241071428572
+     },
+     {
+      "point": "main",
+      "pid": "coffee",
+      "P": 129,
+      "priceSet": 129,
+      "D": 38,
+      "S": 38,
+      "lostStock": 0,
+      "lostQueue": 0,
+      "carried": 0,
+      "order": 47,
+      "have": 47,
+      "carry": 7,
+      "spoiled": 2,
+      "rev": 4902,
+      "cost": 1880,
+      "tax": 0,
+      "cBuy": 40,
+      "k": 1.15625,
+      "mr": 56.616874199461364,
+      "mc": 40,
+      "el": 1.7821833275821313,
+      "dExp": 41.046875,
+      "cs": 1503.721096239891,
+      "ps": 3382,
+      "dwl": 2655.01128466107,
+      "pOpt": 120,
+      "qOpt": 46.25,
+      "mode": "notebook",
+      "why": null,
+      "mrTrue": 58,
+      "cap": null,
+      "comp": null,
+      "base": true,
+      "capacityBound": false,
+      "lambda": 5.305019305019308,
+      "pBest": 122.65250965250965,
+      "qBest": 44.71651785714286
+     }
+    ],
+    "revenue": 17136,
+    "buyCost": 6460,
+    "taxPaid": 0,
+    "fixed": 900,
+    "profit": 9776,
+    "repaid": 0,
+    "reward": 0,
+    "newGoals": [],
+    "newChapter": null,
+    "chapterFallback": false,
+    "chapterHint": null,
+    "event": {
+     "id": "blogger",
+     "daysLeft": 3
+    },
+    "sold": 186,
+    "repDelta": {
+     "main": {
+      "from": 0.925,
+      "to": 0.945,
+      "lostShare": 0
+     }
+    },
+    "weekday": 6
+   },
+   "goals": {
+    "first": 1,
+    "mrmc": 2,
+    "week": 7,
+    "k50": 15,
+    "ceiling": 19
+   },
+   "stats": {
+    "totalProfit": 94790,
+    "totalSold": 2799,
+    "bestDay": 9776
+   },
+   "rep": {
+    "main": 0.945,
+    "office": 1
+   },
+   "quiz": {
+    "lastDay": 0,
+    "right": 0,
+    "total": 0
+   },
+   "plusStreak": 21,
+   "cleanStreak": 2
+  }
+ }
+}
