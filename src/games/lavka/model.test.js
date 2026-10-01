@@ -96,3 +96,112 @@ test("МНК восстанавливает спрос по точным наб�
 test("в Вопросе дня верный вариант существует", () => {
   for (const q of L.LAVKA_QUIZ) assert.ok(q.a >= 0 && q.a < q.opts.length);
 });
+
+/* ===== Исправления по ревью экономиста (docs/reviews/2026-10-01-economist.md) ===== */
+
+const sumQ = (plan) => Object.values(plan.rows).reduce((s, r) => s + r.qOpt, 0);
+
+test("больше покупателей (выходные, лояльность, вывеска, фестиваль): спрос ×n, P* не меняется", () => {
+  const mon = L.lavkaParams(fresh(), "main", "lemonade");
+  const sat = fresh(); sat.day = 6; sat.rep.main = 1.1; sat.upgrades.sign = true; // сб ×1,3 · лояльность · вывеска
+  const m = L.lavkaParams(sat, "main", "lemonade");
+  near(m.pOpt, mon.pOpt);
+  near(m.qOpt, mon.qOpt * 1.3 * 1.1 * 1.15, 1e-9);
+  const fest = fresh(); fest.event = { id: "festival", daysLeft: 1 };
+  const f = L.lavkaParams(fest, "main", "lemonade");
+  near(f.pOpt, mon.pOpt); near(f.qOpt, mon.qOpt * 1.3, 1e-9);
+});
+
+test("тетрадь: МНК по дням с разным числом покупателей восстанавливает базовый спрос точно", () => {
+  const obs = [];
+  for (const [day, rep, P] of [[1, 1, 30], [3, 0.9, 45], [6, 1.05, 50], [7, 1.1, 60], [5, 0.85, 40]]) {
+    const st = fresh(); st.day = day; st.rep.main = rep;
+    const m = L.lavkaParams(st, "main", "lemonade");
+    obs.push({ P, D: m.A - m.B * P, k: m.k, base: true });
+  }
+  const f = L.lavkaFit(obs);
+  near(f.alpha, 160, 1e-6); near(f.beta, 2, 1e-6);
+});
+
+test("мощность не ограничивает → план совпадает с монопольным оптимумом, λ = 0", () => {
+  const st = fresh(); st.upgrades.helper = true; // 220 мест, а Q* = 122,5
+  const plan = L.lavkaPlan(st, "main");
+  assert.equal(plan.lambda, 0);
+  near(plan.rows.lemonade.pOpt, 50); near(plan.rows.croissant.pOpt, 55);
+});
+
+test("мощность ограничивает → MR = MC + λ для каждого товара и ΣQ = мощность", () => {
+  const st = fresh(); st.day = 6; // суббота: Q* = 84 + 92,5 > 120
+  const plan = L.lavkaPlan(st, "main");
+  assert.ok(plan.lambda > 0);
+  near(sumQ(plan), L.LAVKA_CAPACITY, 1e-6);
+  for (const pid of ["lemonade", "croissant"]) {
+    const m = L.lavkaParams(st, "main", pid), r = plan.rows[pid];
+    near(2 * r.pOpt - m.A / m.B, m.mc + plan.lambda, 1e-6);
+    assert.ok(r.pOpt > m.pOpt, "с узким местом выгодная цена выше монопольной");
+  }
+});
+
+test("баланс денег и инварианты сохраняются при новой модели (40 дней со всеми улучшениями)", () => {
+  let st = fresh();
+  st.cash = 1e6; for (const u of L.LAVKA_UPGRADES) st.upgrades[u.id] = true;
+  for (let d = 0; d < 40; d++) {
+    for (const p of L.lavkaOpenPoints(st)) {
+      const plan = L.lavkaPlan(st, p);
+      for (const pid of L.lavkaUnlocked(st)) st.settings[p][pid] = { price: Math.round(plan.rows[pid].pOpt), order: Math.round(plan.rows[pid].qOpt * 1.05) };
+    }
+    const before = st.cash;
+    const { next, report } = L.lavkaSimulate(st);
+    assert.ok(Math.abs(next.cash - (before + report.profit - report.repaid + report.reward)) <= 1);
+    for (const r of report.rows) { assert.ok(r.lambda >= 0); assert.equal(r.S + r.lostStock + r.lostQueue, r.D); }
+    st = next;
+  }
+});
+
+const row = (o) => ({ P: 50, priceSet: 50, D: 60, S: 60, lostStock: 0, lostQueue: 0, mc: 20, lambda: 0, cap: null, mr: 20, el: 1.67, ...o });
+
+test("вердикт: цена ровно на потолке — не советует поднять цену", () => {
+  const v = L.lavkaVerdict(row({ P: 37, priceSet: 37, cap: 37, mr: 2 * 37 - 80 }));
+  assert.ok(!/Подними/.test(v), v);
+  assert.match(v, /потол/i);
+});
+
+test("вердикт: товар кончился — сначала закупка, а не «снизь цену»", () => {
+  const v = L.lavkaVerdict(row({ P: 45, mr: 10, D: 70, S: 50, lostStock: 20 }));
+  assert.ok(!/Снизь цену — продашь больше/.test(v), v);
+  assert.match(v, /закуп/i);
+});
+
+test("вердикт: очередь при MR > MC — снижение цены не добавит продаж", () => {
+  const v = L.lavkaVerdict(row({ P: 45, mr: 30, D: 70, S: 55, lostQueue: 15 }));
+  assert.ok(!/Снизь цену — продашь больше/.test(v), v);
+  assert.match(v, /очеред|прилав/i);
+});
+
+test("вердикт при узком месте сравнивает MR с MC + λ", () => {
+  const v = L.lavkaVerdict(row({ P: 56, mr: 32, lambda: 12 }));
+  assert.match(v, /λ/);
+  assert.ok(!/Подними|Снизь/.test(v), v);
+});
+
+test("старое сохранение (до модели n·(A − B·P)) загружается, старые наблюдения не портят тетрадь", () => {
+  const old = { ...fresh(), day: 11, cash: 26866, upgrades: { analyst: true }, at: 1 };
+  delete old.model;
+  old.obs.main.lemonade = [{ P: 50, D: 70, k: 1.3, day: 6, base: true }];
+  const s = L.lavkaLoad(JSON.stringify(old));
+  assert.equal(s.day, 11); assert.equal(s.cash, 26866); assert.ok(s.upgrades.analyst);
+  assert.equal(s.obs.main.lemonade[0].base, false);
+  assert.equal(s.model, L.LAVKA_MODEL_VERSION);
+  const again = L.lavkaLoad(JSON.stringify({ ...s, obs: { ...s.obs, main: { ...s.obs.main, croissant: [{ P: 50, D: 70, k: 1, day: 12, base: true }] } } }));
+  assert.equal(again.obs.main.croissant[0].base, true, "новые наблюдения не трогаем");
+  assert.equal(L.lavkaLoad(null).day, 1);
+  assert.equal(L.lavkaLoad("{битый json").day, 1);
+});
+
+test("вердикт: склонение «покупатель» и λ < 2 ₽ не показывается", () => {
+  assert.match(L.lavkaVerdict(row({ lostStock: 1, D: 61 })), /1 покупатель ушёл/);
+  assert.match(L.lavkaVerdict(row({ lostStock: 22, D: 82 })), /22 покупателя ушли/);
+  assert.match(L.lavkaVerdict(row({ lostStock: 41, D: 101 })), /41 покупатель ушёл/);
+  assert.match(L.lavkaVerdict(row({ lostStock: 12, D: 72 })), /12 покупателей ушли/);
+  assert.ok(!/λ/.test(L.lavkaVerdict(row({ lambda: 1.1 }))));
+});

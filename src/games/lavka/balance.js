@@ -6,10 +6,12 @@ import * as L from "./model.js";
 const DAYS = Number(process.argv[2] || 40), RUNS = Number(process.argv[3] || 20);
 const BUY = [[5, "analyst"], [12, "coffee"], [14, "helper"], [20, "fridge"], [25, "office"]];
 
+/* m — параметры товара (lavkaParams), b — план точки с учётом мощности (lavkaPlan): MR = MC + λ. */
 const strategies = {
-  "оптимум (P*, закупка 105%)": (m) => ({ price: Math.round(m.pOpt), order: m.qOpt * 1.05 }),
-  "оптимум, закупка 85%":       (m) => ({ price: Math.round(m.pOpt), order: m.qOpt * 0.85 }),
-  "оптимум, закупка 125%":      (m) => ({ price: Math.round(m.pOpt), order: m.qOpt * 1.25 }),
+  "оптимум (P*, закупка 105%)": (m, b) => ({ price: Math.round(b.pOpt), order: b.qOpt * 1.05 }),
+  "оптимум, закупка 85%":       (m, b) => ({ price: Math.round(b.pOpt), order: b.qOpt * 0.85 }),
+  "оптимум, закупка 125%":      (m, b) => ({ price: Math.round(b.pOpt), order: b.qOpt * 1.25 }),
+  "MR = MC без учёта мощности": (m) => ({ price: Math.round(m.pOpt), order: m.qOpt * 1.05 }),
   "дёшево (P = MC + 5)":        (m) => ({ price: Math.round(m.mc + 5), order: m.A - m.B * (m.mc + 5) }),
   "дорого (P = 0,9·резерв.)":    (m) => ({ price: Math.round(0.9 * m.choke), order: m.A - m.B * 0.9 * m.choke }),
   "цена не меняется (50 ₽)":    (m) => ({ price: 50, order: Math.max(0, m.A - m.B * 50) }),
@@ -23,7 +25,7 @@ function play(fn) {
       if (d >= day && !st.upgrades[id] && st.cash >= u.cost) { st.cash -= u.cost; st.upgrades[id] = true; firstBuy[id] = st.day; }
     }
     for (const p of L.lavkaOpenPoints(st)) for (const pid of L.lavkaUnlocked(st)) {
-      const m = L.lavkaParams(st, p, pid), s = fn(m);
+      const m = L.lavkaParams(st, p, pid), s = fn(m, L.lavkaPlan(st, p).rows[pid]);
       st.settings[p][pid] = { price: Math.max(1, s.price), order: Math.max(0, Math.round(s.order) - (st.stock[p][pid] || 0)) };
     }
     const { next, report } = L.lavkaSimulate(st); total += report.profit; st = next;

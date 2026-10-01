@@ -8,6 +8,7 @@ import {
   LAVKA_PRODUCTS, LAVKA_POINTS, LAVKA_CAPACITY, LAVKA_HELPER_CAP, LAVKA_HELPER_WAGE, LAVKA_FRIDGE_KEEP,
   LAVKA_WEEKDAYS, LAVKA_UPGRADES, LAVKA_EVENTS, LAVKA_GOALS, LAVKA_QUIZ, LAVKA_MONO,
   lavkaWeekday, lavkaUnlocked, lavkaOpenPoints, lavkaNewState, lavkaParams, lavkaSimulate, lavkaFit, lavkaFmt, lavkaRub,
+  lavkaVerdict, lavkaLoad,
 } from "./model.js";
 function LavkaStepper({ value, onChange, step = 1, min = 0, max = 9999, suffix }) {
   const btn = { background: COLORS.paperDeep, color: COLORS.ink, border: `1px solid ${COLORS.line}` };
@@ -186,7 +187,8 @@ function LavkaProductRow({ st, point, pid, onSet, fit }) {
       {lastRow && (
         <p className="text-xs mt-1.5" style={{ color: COLORS.inkSoft, fontFamily: LAVKA_MONO }}>
           вчера: {lastRow.P} ₽, хотели {lastRow.D}, продано {lastRow.S}
-          {lastRow.mr != null && <> , MR {lastRow.mr.toFixed(0)} {Math.abs(lastRow.mr - lastRow.mc) <= 3 ? "≈" : lastRow.mr > lastRow.mc ? ">" : "<"} MC {lastRow.mc.toFixed(0)}</>}
+          {lastRow.mr != null && (() => { const lam = (lastRow.lambda || 0) >= 2 ? lastRow.lambda : 0, t = lastRow.mc + lam;
+            return <> , MR {lastRow.mr.toFixed(0)} {Math.abs(lastRow.mr - t) <= 3 ? "≈" : lastRow.mr > t ? ">" : "<"} {lam >= 2 ? `MC + λ ${t.toFixed(0)}` : `MC ${lastRow.mc.toFixed(0)}`}</>; })()}
         </p>
       )}
     </LavkaCard>
@@ -288,14 +290,7 @@ function LavkaReport({ rep, st, onNext }) {
       <span style={{ fontFamily: LAVKA_MONO, fontWeight: strong ? 700 : 400 }}>{v}</span>
     </div>
   );
-  const verdict = (r) => {
-    if (r.mr == null) return "Спроса при такой цене нет совсем: цена выше резервной цены всех покупателей.";
-    if (r.cap != null && r.priceSet > r.cap) return `Цена срезана потолком до ${r.cap} ₽. На горизонтальном участке MR = потолок = ${r.cap} ₽ > MC — закупай под D(потолок).`;
-    const d = r.mr - r.mc;
-    if (Math.abs(d) <= 3) return `MR ≈ MC (${r.mr.toFixed(0)} и ${r.mc.toFixed(0)} ₽) — цена почти идеальна.`;
-    if (d > 0) return `MR = ${r.mr.toFixed(0)} ₽ > MC = ${r.mc.toFixed(0)} ₽: следующая единица приносит больше, чем стоит. Снизь цену — продашь больше.`;
-    return `MR = ${r.mr.toFixed(0)} ₽ < MC = ${r.mc.toFixed(0)} ₽: последние единицы продавались себе в убыток. Подними цену.`;
-  };
+  const verdict = lavkaVerdict;
   const multi = lavkaOpenPoints(st).length > 1;
   return (
     <div className="ms-rise">
@@ -339,7 +334,7 @@ function LavkaReport({ rep, st, onNext }) {
               {cell("Цена", `${r.P} ₽`)}
               {cell("Хотели купить", r.D)}
               {cell("Продано", r.S)}
-              {cell("|E| при этой цене", r.el != null ? r.el.toFixed(2) : "—", r.el != null ? (r.el > 1 ? COLORS.sage : COLORS.rust) : undefined)}
+              {cell("|E| (по средней кривой)", r.el != null ? r.el.toFixed(2) : "—", r.el != null ? (r.el > 1 ? COLORS.sage : COLORS.rust) : undefined)}
               {r.lostStock > 0 && cell("Не хватило товара", r.lostStock, COLORS.rust)}
               {r.lostQueue > 0 && cell("Ушли из очереди", r.lostQueue, COLORS.rust)}
               {r.spoiled > 0 && cell("Выброшено", `${r.spoiled} (−${lavkaFmt(r.spoiled * r.cBuy)} ₽)`, COLORS.rust)}
@@ -353,7 +348,9 @@ function LavkaReport({ rep, st, onNext }) {
               <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>|E| &lt; 1 — неэластичный участок: MR &lt; 0. Монополист здесь не стоит никогда: подняв цену, получишь больше выручки при меньших издержках.</p>
             )}
             {r.capacityBound && (
-              <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Прилавок не справился с потоком: мощность — ещё одно ограничение. При нехватке мощности выгодно поднять цену, пока очередь не исчезнет.</p>
+              <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Прилавок не справился с потоком: мощность — ещё одно ограничение.{r.lambda >= 2
+                ? ` При лучших ценах место у прилавка стоило бы λ ≈ ${r.lambda.toFixed(0)} ₽ (теневая цена мощности), и правило становится MR = MC + λ: выгоднее поднять цены, чем держать очередь.`
+                : " Мощность хватает на оптимальные цены — очередь появилась из-за слишком низкой цены."}</p>
             )}
           </LavkaCard>
         );
@@ -508,15 +505,9 @@ function LavkaScreen({ onBack, theme, onToggleTheme }) {
 
   useEffect(() => {
     (async () => {
-      let s = null;
-      try { const r = await window.storage.get("lavka-save"); if (r) s = JSON.parse(r.value); } catch (e) {}
-      const fresh = lavkaNewState();
-      if (s && s.v === 1) {
-        s = { ...fresh, ...s, settings: { main: { ...fresh.settings.main, ...(s.settings?.main || {}) }, office: { ...fresh.settings.office, ...(s.settings?.office || {}) } },
-          obs: { main: { ...fresh.obs.main, ...(s.obs?.main || {}) }, office: { ...fresh.obs.office, ...(s.obs?.office || {}) } },
-          stock: { main: { ...(s.stock?.main || {}) }, office: { ...(s.stock?.office || {}) } } };
-      } else s = fresh;
-      setSt(s);
+      let raw = null;
+      try { const r = await window.storage.get("lavka-save"); if (r) raw = r.value; } catch (e) {}
+      setSt(lavkaLoad(raw));
     })();
   }, []);
 
@@ -544,9 +535,6 @@ function LavkaScreen({ onBack, theme, onToggleTheme }) {
     if (st.cash < u.cost || st.upgrades[u.id]) return;
     update((s) => {
       const n = { ...s, cash: s.cash - u.cost, upgrades: { ...s.upgrades, [u.id]: true } };
-      if (u.id === "sign") {
-        n.obs = Object.fromEntries(Object.entries(s.obs).map(([p, byPid]) => [p, Object.fromEntries(Object.entries(byPid).map(([pid, list]) => [pid, list.map((o) => ({ ...o, base: false }))]))]));
-      }
       if (u.id === "office") n.settings = { ...s.settings, office: { ...s.settings.main } };
       return n;
     });
@@ -651,7 +639,7 @@ function LavkaScreen({ onBack, theme, onToggleTheme }) {
             {!canOpen && <p className="text-sm mt-2" style={{ color: COLORS.rust }}>На закупку не хватает {lavkaRub(orderCost - st.cash)}. Уменьши закупку{(st.debt || 0) > 3300 ? "" : " или возьми кредит"}.</p>}
             {st.cash < 1500 && (st.debt || 0) <= 3300 && (
               <button onClick={takeLoan} className="w-full py-3 rounded-full text-sm mt-2" style={{ border: `1px solid ${COLORS.line}`, color: COLORS.ink }}>
-                Взять кредит 3 000 ₽ под 10% (вернуть 3 300 ₽ из половины будущей прибыли)
+                Взять кредит 3 000 ₽: вернуть 3 300 ₽ (разовая переплата 300 ₽ = 10% суммы, без срока) из половины будущей прибыли
               </button>
             )}
           </div>

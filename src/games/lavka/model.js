@@ -31,6 +31,9 @@ const LAVKA_CAPACITY = 120;       // покупателей в день на т�
 const LAVKA_HELPER_CAP = 100;     // + от помощника
 const LAVKA_HELPER_WAGE = 500;    // ₽/день на точку
 const LAVKA_FRIDGE_KEEP = 0.8;
+const LAVKA_SIGN_MULT = 1.15;     // вывеска: покупателей на 15% больше
+/* Версия экономической модели в сохранении. 2 — «больше покупателей» = k·(A − B·P) (1 октября 2026). */
+const LAVKA_MODEL_VERSION = 2;
 
 /* Ритм недели: день 1 — понедельник. Парк оживает в выходные, бизнес-центр пустеет —
    один и тот же календарь сдвигает спрос двух рынков в разные стороны. */
@@ -55,10 +58,10 @@ const LAVKA_UPGRADES = [
     lesson: "Порча — цена ошибки прогноза. Хранение удешевляет ошибку «закупил слишком много», поэтому закупать можно смелее." },
   { id: "helper", emoji: "🧑‍🍳", title: "Помощник за прилавком", cost: 6000,
     desc: "+100 покупателей в день к пропускной способности каждой точки. Зарплата 500 ₽/день за точку.",
-    lesson: "Зарплата помощника — постоянные издержки: от Q они не зависят, поэтому оптимальную цену не меняют. Меняется только ограничение мощности." },
+    lesson: "Зарплата помощника — постоянные издержки: от Q они не зависят и сами по себе P* не меняют. Но помощник расширяет мощность: если прилавок был узким местом, теневая цена места λ падает, и выгодная цена (MR = MC + λ) снижается." },
   { id: "sign", emoji: "🪧", title: "Яркая вывеска", cost: 7000,
-    desc: "Спрос на всё +15%: кривая сдвигается вправо.",
-    lesson: "Реклама — неценовой фактор: сдвиг спроса, а не движение вдоль него. Старые наблюдения в тетради стали неактуальны." },
+    desc: "Покупателей на 15% больше: при любой цене спрос ×1,15 — кривая сдвигается вправо.",
+    lesson: "Реклама — неценовой фактор: сдвиг спроса, а не движение вдоль него. Пришло больше таких же покупателей — резервная цена и эластичность при каждой цене прежние, поэтому P* не меняется, растёт объём. Если прилавок и так полон, вывеска поднимет теневую цену места — и выгодную цену." },
   { id: "freezer", emoji: "🍦", title: "Морозильный ларь", cost: 9000,
     desc: "Открывает мороженое. Спрос сильно зависит от погоды.", lesson: "Неценовые факторы сдвигают спрос на разные товары в разные стороны — следи за прогнозом." },
   { id: "supplier", emoji: "🚚", title: "Оптовый поставщик", cost: 12000,
@@ -66,7 +69,7 @@ const LAVKA_UPGRADES = [
     lesson: "MC упали на ΔMC — при линейном спросе оптимальная цена падает на ΔMC/2, объём растёт. Половина выгоды достаётся покупателям." },
   { id: "office", emoji: "🏢", title: "Вторая точка у бизнес-центра", cost: 30000,
     desc: "Новый рынок: клиенты менее чувствительны к цене. Аренда 900 ₽/день, свои цены и закупка.",
-    lesson: "Ценовая дискриминация III степени: MC одинаковы, а MR₁ = MR₂ = MC. Где спрос менее эластичен, там цена выше." },
+    lesson: "Ценовая дискриминация III степени: рынки разделены (перепродать товар из одной точки в другую нельзя), MC одинаковы, а MR₁ = MR₂ = MC. Где спрос менее эластичен, там цена выше." },
 ];
 
 const lavkaRand = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -80,15 +83,15 @@ const LAVKA_EVENTS = {
   },
   rain: {
     emoji: "🌧", title: "Ливень весь день", days: [1, 2], weight: 3,
-    text: () => "Прохожих меньше, холодное почти не берут, зато все греются кофе.",
+    text: () => "Холодного почти не хочется, зато все греются кофе.",
     effect: (pid) => ({ lemonade: { aMult: 0.6 }, icecream: { aMult: 0.5 }, coffee: { aMult: 1.3 } })[pid],
     theory: () => "Один и тот же неценовой фактор сдвигает спрос на разные блага в разные стороны: на холодное — влево, на кофе — вправо. Оптимум пересчитывается по каждому товару отдельно.",
   },
   festival: {
     emoji: "🎪", title: "Городской фестиваль", days: [1, 1], weight: 2,
     text: () => "В парке фестиваль — покупателей на треть больше по всем товарам.",
-    effect: () => ({ aMult: 1.3 }),
-    theory: () => "Больше покупателей — спрос вправо (A ×1,3), наклон B прежний. При той же цене Q выросло, значит |E| = B·P/Q упала: спрос стал менее эластичным в каждой точке, и оптимальная цена растёт.",
+    effect: () => ({ nMult: 1.3 }),
+    theory: () => "Пришло больше таких же покупателей: рыночный спрос — сумма индивидуальных, Q = 1,3·(A − B·P). Кривая сдвигается вправо, но резервная цена A/B и эластичность при каждой цене прежние — значит, P* = (A/B + MC)/2 не меняется, растёт только объём. Если же прилавок не справится с потоком, появится теневая цена места λ — и выгодная цена поднимется (MR = MC + λ).",
   },
   flour: {
     emoji: "🌾", title: "Подорожала мука", days: [2, 3], weight: 2,
@@ -98,9 +101,9 @@ const LAVKA_EVENTS = {
   },
   blogger: {
     emoji: "📸", title: "Блогер похвалил круассаны", days: [2, 3], weight: 2,
-    text: () => "Пришли фанаты: покупателей больше, и цена их почти не смущает.",
+    text: () => "Пришли фанаты: они готовы платить больше, и цена их почти не смущает.",
     effect: (pid) => (pid === "croissant" ? { aMult: 1.3, bMult: 0.75 } : null),
-    theory: () => "Два эффекта: спрос вправо (A ×1,3) и спрос круче (B ×0,75) — лояльные покупатели меньше реагируют на цену. По правилу Лернера (P − MC)/P = 1/|E|: чем ниже эластичность в оптимуме, тем выше наценка.",
+    theory: () => "Два эффекта: каждый покупатель готов платить больше (A ×1,3) и меньше реагирует на цену (B ×0,75) — резервная цена A/B растёт в 1,73 раза. По правилу Лернера (P − MC)/P = 1/|E|: чем ниже эластичность в оптимуме, тем выше наценка.",
   },
   tax: {
     emoji: "🧾", title: "Акциз 10 ₽", days: [2, 3], weight: 2, needsProduct: true,
@@ -118,7 +121,7 @@ const LAVKA_EVENTS = {
     emoji: "🏪", title: "Рядом открылась лавка «У Семёна»", days: [4, 4], weight: 2, needsProduct: true,
     text: (ev) => `Семён продаёт тот же товар «${LAVKA_PRODUCTS[ev.product].name}» у парка. Каждое утро он смотрит на твою вчерашнюю цену и выбирает свою.`,
     effect: (pid, point, ev) => (pid === ev.product && point === "main" ? { comp: true } : null),
-    theory: () => "Дуополия Бертрана с дифференцированным товаром: твой спрос Q = 0,55·A − B·P + 0,5·B·Pк — растёт, если Семён дорожает. Он играет наилучший ответ Pк = (0,55·A + 0,5·B·P + B·c)/(2B). Если оба отвечают наилучшим образом, цены сходятся к равновесию Нэша P = (0,55·A + B·c)/(1,5·B) — ниже монопольной. Демпинг до MC невыгоден: товары не одинаковы, покупатели не уходят все сразу.",
+    theory: () => "Дуополия Бертрана с дифференцированным товаром: твой спрос Q = 0,55·A − B·P + 0,5·B·Pк — растёт, если Семён дорожает. Он играет наилучший ответ Pк = (0,55·A + 0,5·B·P + B·c)/(2B). Семён отвечает на твою вчерашнюю цену, его MC — базовая закупка c. Если оба раз за разом отвечают наилучшим образом, цены сходятся к равновесию Нэша P = (0,55·A + B·c)/(1,5·B) — ниже монопольной. Демпинг до MC невыгоден: товары не одинаковы, покупатели не уходят все сразу.",
   },
 };
 
@@ -138,7 +141,7 @@ function lavkaDefaultSettings() {
 function lavkaNewState() {
   const empty = () => Object.fromEntries(LAVKA_PIDS.map((p) => [p, []]));
   return {
-    v: 1, at: Date.now(), day: 1, cash: 2000, debt: 0,
+    v: 1, model: LAVKA_MODEL_VERSION, at: Date.now(), day: 1, cash: 2000, debt: 0,
     upgrades: {},
     settings: lavkaDefaultSettings(),
     stock: { main: {}, office: {} },
@@ -157,9 +160,12 @@ function lavkaNewState() {
 /* Параметры рынка товара pid в точке point на сегодня (с учётом события). */
 function lavkaParams(st, point, pid, ignoreEvent) {
   const pr = LAVKA_PRODUCTS[pid], pt = LAVKA_POINTS[point];
-  const k = LAVKA_WEEK_MULT[point][lavkaWeekday(st.day)] * ((st.rep && st.rep[point]) || 1);
-  let A = pr.a * pt.aMult * (st.upgrades.sign ? 1.15 : 1) * k;
-  let B = pr.b * pt.bMult;
+  /* k — во сколько раз больше покупателей, чем в обычный будний день при лояльности 100%:
+     день недели × лояльность × вывеска (× фестиваль ниже). Каждый покупатель тот же, поэтому спрос
+     складывается по горизонтали: Q = k·(a − b·P) — растут и A, и B, резервная цена A/B и P* не меняются. */
+  let k = LAVKA_WEEK_MULT[point][lavkaWeekday(st.day)] * ((st.rep && st.rep[point]) || 1) * (st.upgrades.sign ? LAVKA_SIGN_MULT : 1);
+  let A = pr.a * pt.aMult * k;
+  let B = pr.b * pt.bMult * k;
   let cBuy = pr.c * (st.upgrades.supplier ? 0.85 : 1);
   let tax = 0, cap = null, comp = null, base = true;
   const ev = ignoreEvent ? null : st.event;
@@ -167,6 +173,7 @@ function lavkaParams(st, point, pid, ignoreEvent) {
     const eff = LAVKA_EVENTS[ev.id].effect(pid, point, ev);
     if (eff) {
       base = false;
+      if (eff.nMult) { A *= eff.nMult; B *= eff.nMult; k *= eff.nMult; }
       if (eff.aMult) A *= eff.aMult;
       if (eff.bMult) B *= eff.bMult;
       if (eff.cAdd) cBuy += eff.cAdd;
@@ -180,6 +187,79 @@ function lavkaParams(st, point, pid, ignoreEvent) {
   if (cap != null && cap < pOpt && cap >= mc) pOpt = cap;
   const qOpt = Math.max(0, A - B * pOpt);
   return { A, B, cBuy, tax, mc, cap, comp, base, pOpt, qOpt, choke: A / B, k };
+}
+
+/* Оптимум точки с учётом мощности прилавка. Каждое место у прилавка можно отдать одному покупателю
+   любого товара, поэтому максимизируем Σ(Pᵢ − MCᵢ)·Qᵢ при ΣQᵢ ≤ мощность. Условие оптимума:
+   MRᵢ = MCᵢ + λ, где λ ≥ 0 — теневая цена места (λ = 0, если мощность не ограничивает).
+   При линейном спросе Pᵢ = (Aᵢ/Bᵢ + MCᵢ + λ)/2. Товар с потолком цены продаётся по потолку,
+   если потолок ≥ MC + λ, иначе место выгоднее отдать другим товарам. λ ищем бисекцией. */
+function lavkaPlan(st, point) {
+  const capacity = LAVKA_CAPACITY + (st.upgrades.helper ? LAVKA_HELPER_CAP : 0);
+  const pids = lavkaUnlocked(st);
+  const ms = Object.fromEntries(pids.map((pid) => [pid, lavkaParams(st, point, pid)]));
+  const at = (lam) => {
+    const rows = {};
+    for (const pid of pids) {
+      const m = ms[pid];
+      let p = (m.A / m.B + m.mc + lam) / 2, q;
+      if (m.cap != null && m.cap < p) { p = m.cap; q = m.cap >= m.mc + lam ? Math.max(0, m.A - m.B * m.cap) : 0; }
+      else q = Math.max(0, m.A - m.B * p);
+      rows[pid] = { pOpt: p, qOpt: q };
+    }
+    return rows;
+  };
+  const total = (rows) => Object.values(rows).reduce((sum, r) => sum + r.qOpt, 0);
+  let rows = at(0), lambda = 0;
+  if (total(rows) > capacity) {
+    let lo = 0, hi = Math.max(...pids.map((pid) => ms[pid].A / ms[pid].B));
+    for (let i = 0; i < 80; i++) { const mid = (lo + hi) / 2; if (total(at(mid)) > capacity) lo = mid; else hi = mid; }
+    lambda = hi; rows = at(hi);
+    /* Товар с потолком при λ ≈ потолок − MC продаётся частично — добираем остаток мощности. */
+    let rest = capacity - total(rows);
+    for (const pid of pids) {
+      const m = ms[pid];
+      if (rest > 1e-9 && m.cap != null && rows[pid].qOpt === 0 && Math.abs(m.cap - m.mc - lambda) < 1e-3) {
+        const add = Math.min(rest, Math.max(0, m.A - m.B * m.cap));
+        rows[pid] = { pOpt: m.cap, qOpt: add }; rest -= add;
+      }
+    }
+  }
+  return { capacity, lambda, rows };
+}
+
+/* Вердикт отчёта по товару: что говорит теория о вчерашнем решении. Чистая функция строки отчёта. */
+function lavkaVerdict(r) {
+  if (r.mr == null) return "Спроса при такой цене нет совсем: цена выше резервной цены всех покупателей.";
+  const lam = r.lambda || 0, narrow = lam >= 2; // λ < 2 ₽ в тексте не показываем: место почти ничего не стоит
+  const buyers = (n) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? "покупатель ушёл" : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? "покупателя ушли" : "покупателей ушли"}`;
+  const target = r.mc + (narrow ? lam : 0);
+  const rhs = narrow ? `MC + λ = ${r.mc.toFixed(0)} + ${lam.toFixed(0)} = ${target.toFixed(0)} ₽` : `MC = ${r.mc.toFixed(0)} ₽`;
+  if (r.cap != null && r.P >= r.cap) {
+    return r.cap >= target
+      ? `Цена стоит на потолке ${r.cap} ₽. До объёма D(потолок) каждая единица приносит ровно потолок: MR = ${r.cap} ₽ ≥ ${rhs}. Цену поднять нельзя — продавай всё, что спрашивают: закупай под D(потолок).`
+      : `Цена стоит на потолке ${r.cap} ₽, а место у прилавка дороже: MR = ${r.cap} ₽ < ${rhs}. Отдай места другим товарам — закупай этого меньше.`;
+  }
+  const d = r.mr - target;
+  const mr = `MR = ${r.mr.toFixed(0)} ₽`;
+  if (r.lostStock > 0) {
+    return `Товар кончился: ${buyers(r.lostStock)} без покупки. Сначала закупка — при цене ${r.P} ₽ спрос был ${r.D}, а не ${r.S}. ` +
+      (Math.abs(d) <= 3 ? `Цена при этом почти верная: ${mr} ≈ ${rhs}.` : d > 0 ? `${mr} > ${rhs}: цену можно снизить, но только вместе с закупкой.` : `${mr} < ${rhs}: цену стоит поднять.`);
+  }
+  if (Math.abs(d) <= 3) {
+    return narrow
+      ? `${mr} ≈ ${rhs}. Прилавок — узкое место, и с учётом теневой цены места λ цена почти идеальна.`
+      : `${mr} ≈ ${rhs} — цена почти идеальна.`;
+  }
+  if (d > 0) {
+    if (r.lostQueue > 0) return `${mr} > ${rhs}, но ${buyers(r.lostQueue)} из очереди: прилавок не успевает. Снижение цены лишь удлинит очередь — сначала нужна мощность (помощник) или места, освобождённые от других товаров.`;
+    return narrow
+      ? `${mr} > ${rhs}: даже с учётом цены места следующая единица выгодна. Снизь цену — продашь больше.`
+      : `${mr} > ${rhs}: следующая единица приносит больше, чем стоит. Снизь цену — продашь больше.`;
+  }
+  return narrow
+    ? `${mr} < ${rhs}: место у прилавка стоит λ ≈ ${lam.toFixed(0)} ₽, а последние единицы его не окупают. Подними цену.`
+    : `${mr} < ${rhs}: последние единицы продавались себе в убыток. Подними цену.`;
 }
 
 /* Наилучший ответ конкурента на нашу цену P (его MC = базовая закупка). */
@@ -198,7 +278,7 @@ function lavkaSimulate(st) {
   let revenue = 0, buyCost = 0, taxPaid = 0, fixed = 0, sold = 0;
   const stock = { main: { ...st.stock.main }, office: { ...st.stock.office } };
   for (const point of points) {
-    const cap = LAVKA_CAPACITY + (st.upgrades.helper ? LAVKA_HELPER_CAP : 0);
+    const plan = lavkaPlan(st, point), cap = plan.capacity;
     fixed += LAVKA_POINTS[point].rent + (st.upgrades.helper ? LAVKA_HELPER_WAGE : 0);
     const pre = pids.map((pid) => {
       const m = lavkaParams(st, point, pid);
@@ -233,6 +313,7 @@ function lavkaSimulate(st) {
         carried: r.carried, order: r.order, have: r.have, carry, spoiled, rev, cost, tax: tx, cBuy, k: r.m.k,
         mr, mc, el, cs, ps: (r.P - mc) * S, dwl, pOpt: r.m.pOpt, qOpt: r.m.qOpt,
         cap: r.m.cap, comp: r.m.comp, base: r.m.base, capacityBound: k < 1,
+        lambda: plan.lambda, pBest: plan.rows[r.pid].pOpt, qBest: plan.rows[r.pid].qOpt,
       });
       for (let i = 0; i < S; i++) tokens.push({ pid: r.pid, point, ok: true, P: r.P });
       for (let i = 0; i < lostStock + lostQueue; i++) tokens.push({ pid: r.pid, point, ok: false });
@@ -266,7 +347,7 @@ function lavkaSimulate(st) {
   const goals = { ...st.goals }, newGoals = [];
   const hit = (id) => { if (!goals[id]) { goals[id] = st.day; newGoals.push(id); } };
   if (profit > 0) hit("first");
-  if (rows.length && rows.every((r) => r.mr != null && Math.abs(r.mr - r.mc) <= 3 && r.cap == null)) hit("mrmc");
+  if (rows.length && rows.every((r) => r.mr != null && Math.abs(r.mr - r.mc - r.lambda) <= 3 && r.cap == null && r.lostStock === 0)) hit("mrmc");
   if (rows.some((r) => r.S > 0) && rows.every((r) => r.spoiled === 0 && r.lostStock === 0)) hit("exact");
   if (st.event?.id === "ceiling") {
     const r = rows.find((x) => x.pid === st.event.product && x.point === "main");
@@ -276,7 +357,7 @@ function lavkaSimulate(st) {
   if (points.length === 2) {
     for (const pid of pids) {
       const a = rows.find((r) => r.point === "main" && r.pid === pid), b = rows.find((r) => r.point === "office" && r.pid === pid);
-      if (a && b && a.P !== b.P && a.cap == null && b.cap == null && a.comp == null && Math.abs(a.P - a.pOpt) <= 3 && Math.abs(b.P - b.pOpt) <= 3) hit("discr");
+      if (a && b && a.P !== b.P && a.cap == null && b.cap == null && a.comp == null && Math.abs(a.P - a.pBest) <= 3 && Math.abs(b.P - b.pBest) <= 3) hit("discr");
     }
   }
   let event = st.event ? { ...st.event } : null;
@@ -338,10 +419,10 @@ function lavkaRollEvent(st) {
 const LAVKA_GOALS = [
   { id: "first",   emoji: "🌱", title: "Первая прибыль",        desc: "Закончи день в плюсе.", reward: 300 },
   { id: "exact",   emoji: "🎯", title: "Точная закупка",        desc: "День без порчи и без покупателей, которым не хватило товара.", reward: 800 },
-  { id: "mrmc",    emoji: "🧠", title: "Чуйка монополиста",     desc: "У всех товаров |MR − MC| ≤ 3 ₽ в один день (то же, что |P − P*| ≤ 1,5 ₽).", reward: 1500 },
+  { id: "mrmc",    emoji: "🧠", title: "Чуйка монополиста",     desc: "У всех товаров в один день MR = MC с точностью 3 ₽ (если прилавок — узкое место, MR = MC + λ) и товара хватило всем.", reward: 1500 },
   { id: "ceiling", emoji: "📜", title: "Парадокс потолка",      desc: "Во время потолка цен продай этого товара больше монопольного объёма.", reward: 2000 },
   { id: "war",     emoji: "⚔️", title: "Пережил Семёна",        desc: "Пройди визит конкурента с суммарной прибылью в плюсе.", reward: 2000 },
-  { id: "discr",   emoji: "⚖️", title: "Дискриминация III степени", desc: "Один товар в двух точках по разным ценам, каждая в пределах 3 ₽ от своего оптимума.", reward: 3000 },
+  { id: "discr",   emoji: "⚖️", title: "Дискриминация III степени", desc: "Один товар в двух точках по разным ценам, каждая в пределах 3 ₽ от своего оптимума (с учётом мощности точки).", reward: 3000 },
   { id: "rep105",  emoji: "💛", title: "Любимая лавка",          desc: "Подними лояльность любой точки до 105%: не оставляй людей без товара.", reward: 1500 },
   { id: "week",    emoji: "📈", title: "Неделя в плюсе",          desc: "7 дней подряд с прибылью.", reward: 2500 },
   { id: "quiz10",  emoji: "🎓", title: "Экономист у прилавка",    desc: "10 верных ответов на «Вопрос дня».", reward: 2000 },
@@ -387,12 +468,34 @@ const lavkaFmt = (n) => Math.round(n).toLocaleString("ru-RU");
 const lavkaRub = (n) => `${n < 0 ? "−" : ""}${lavkaFmt(Math.abs(n))} ₽`;
 const LAVKA_MONO = "'IBM Plex Mono', monospace";
 
-/* МНК по обычным дням: D = α − β·P. */
+/* Загрузка сохранения "lavka-save": недостающие поля — по умолчанию; наблюдения, записанные
+   по старой модели спроса (до LAVKA_MODEL_VERSION), уходят из оценки тетради (base: false). */
+function lavkaLoad(raw) {
+  const fresh = lavkaNewState();
+  let s = null;
+  try { s = typeof raw === "string" ? JSON.parse(raw) : raw; } catch (e) { s = null; }
+  if (!s || s.v !== 1) return fresh;
+  const obs = {
+    main: { ...fresh.obs.main, ...(s.obs?.main || {}) },
+    office: { ...fresh.obs.office, ...(s.obs?.office || {}) },
+  };
+  if ((s.model || 1) < LAVKA_MODEL_VERSION) {
+    for (const p of Object.keys(obs)) for (const pid of Object.keys(obs[p])) obs[p][pid] = (obs[p][pid] || []).map((o) => ({ ...o, base: false }));
+  }
+  return {
+    ...fresh, ...s, model: LAVKA_MODEL_VERSION, obs,
+    settings: { main: { ...fresh.settings.main, ...(s.settings?.main || {}) }, office: { ...fresh.settings.office, ...(s.settings?.office || {}) } },
+    stock: { main: { ...(s.stock?.main || {}) }, office: { ...(s.stock?.office || {}) } },
+  };
+}
+
+/* МНК по обычным дням. Наблюдение: D = k·(α − β·P), k — число покупателей относительно обычного будня
+   (день недели × лояльность × вывеска), поэтому D/k = α − β·P — точная линейная зависимость. */
 function lavkaFit(list) {
   const pts = (list || []).filter((o) => o.base);
   if (pts.length < 3) return null;
   const n = pts.length;
-  const dn = (o) => o.D / (o.k || 1); // спрос, приведённый к «обычному будню при лояльности 100%»
+  const dn = (o) => o.D / (o.k || 1); // спрос на «одного обычного будничного покупателя»
   const mp = pts.reduce((s, o) => s + o.P, 0) / n, md = pts.reduce((s, o) => s + dn(o), 0) / n;
   let sxy = 0, sxx = 0;
   for (const o of pts) { sxy += (o.P - mp) * (dn(o) - md); sxx += (o.P - mp) ** 2; }
@@ -410,4 +513,5 @@ export {
   LAVKA_UPGRADES, LAVKA_EVENTS, LAVKA_GOALS, LAVKA_QUIZ,
   lavkaUnlocked, lavkaOpenPoints, lavkaDefaultSettings, lavkaNewState, lavkaParams, lavkaCompBR, lavkaTS,
   lavkaSimulate, lavkaRollEvent, lavkaFit, lavkaFmt, lavkaRub, LAVKA_MONO,
+  lavkaPlan, lavkaVerdict, lavkaLoad, LAVKA_MODEL_VERSION, LAVKA_SIGN_MULT,
 };
