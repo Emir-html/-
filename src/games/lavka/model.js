@@ -89,7 +89,20 @@ const lavkaUpgradeOpen = (st, u) => !!st.upgrades[u.id] || lavkaChapterOf("upgra
 /* Старое сохранение без глав: глава по номеру дня, чтобы ничего не отнять. */
 const lavkaChapterByDay = (day) => [...LAVKA_CHAPTERS].reverse().find((c) => day >= c.fromDay).n;
 
-const lavkaRand = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const lavkaRand = (arr, rng = Math.random) => arr[Math.floor(rng() * arr.length)];
+
+/* Генератор с сидом (mulberry32): одинаковый сид — одинаковые случайные числа. Нужен экзамену:
+   игрок и бот проживают день с одной и той же удачей. */
+function lavkaRng(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 const LAVKA_EVENTS = {
   heat: {
@@ -213,10 +226,11 @@ function lavkaParams(st, point, pid, ignoreEvent) {
    MRᵢ = MCᵢ + λ, где λ ≥ 0 — теневая цена места (λ = 0, если мощность не ограничивает).
    При линейном спросе Pᵢ = (Aᵢ/Bᵢ + MCᵢ + λ)/2. Товар с потолком цены продаётся по потолку,
    если потолок ≥ MC + λ, иначе место выгоднее отдать другим товарам. λ ищем бисекцией. */
-function lavkaPlan(st, point) {
+function lavkaPlan(st, point, estimate) {
   const capacity = LAVKA_CAPACITY + (st.upgrades.helper ? LAVKA_HELPER_CAP : 0);
   const pids = lavkaUnlocked(st);
-  const ms = Object.fromEntries(pids.map((pid) => [pid, lavkaParams(st, point, pid)]));
+  /* estimate(pid, m) → {A, B} — оценка спроса вместо истинной (бот-ученик, тетрадь игрока). */
+  const ms = Object.fromEntries(pids.map((pid) => { const m = lavkaParams(st, point, pid); return [pid, estimate ? { ...m, ...estimate(pid, m) } : m]; }));
   const at = (lam) => {
     const rows = {};
     for (const pid of pids) {
@@ -351,8 +365,8 @@ function lavkaCompBR(st, pid, P) {
 
 function lavkaTS(S, choke, c, B) { return S * (choke - c) - (S * S) / (2 * B); }
 
-/* Один день торговли. Возвращает { next, report }. Чистая функция, кроме Math.random. */
-function lavkaSimulate(st) {
+/* Один день торговли. Возвращает { next, report }. Чистая функция при заданном rng (по умолчанию Math.random). */
+function lavkaSimulate(st, rng = Math.random) {
   const points = lavkaOpenPoints(st), pids = lavkaUnlocked(st);
   const rows = [], tokens = [];
   let revenue = 0, buyCost = 0, taxPaid = 0, fixed = 0, sold = 0;
@@ -365,7 +379,7 @@ function lavkaSimulate(st) {
       const set = st.settings[point][pid];
       const P = m.cap != null ? Math.min(set.price, m.cap) : set.price;
       const dExp = Math.max(0, m.A - m.B * P);
-      const D = Math.max(0, Math.round(dExp * (0.92 + Math.random() * 0.16)));
+      const D = Math.max(0, Math.round(dExp * (0.92 + rng() * 0.16)));
       const carried = stock[point][pid] || 0;
       const have = carried + set.order;
       return { pid, m, P, dExp, D, carried, order: set.order, have, wanted: Math.min(D, have) };
@@ -415,7 +429,7 @@ function lavkaSimulate(st) {
       for (let i = 0; i < lostStock + lostQueue; i++) tokens.push({ pid: r.pid, point, ok: false });
     }
   }
-  for (let i = tokens.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [tokens[i], tokens[j]] = [tokens[j], tokens[i]]; }
+  for (let i = tokens.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [tokens[i], tokens[j]] = [tokens[j], tokens[i]]; }
 
   const profit = revenue - buyCost - taxPaid - fixed;
   let cash = st.cash + profit, debt = st.debt || 0, repaid = 0;
@@ -498,7 +512,7 @@ function lavkaSimulate(st) {
       event = null;
     }
   }
-  if (!event && st.day >= 2 && Math.random() < 0.45) event = lavkaRollEvent(nextBase);
+  if (!event && st.day >= 2 && rng() < 0.45) event = lavkaRollEvent(nextBase, rng);
   if (event?.id === "competitor") event.compPrice = lavkaCompBR(nextBase, event.product, st.settings.main[event.product].price);
 
   let reward = 0;
@@ -522,22 +536,115 @@ function lavkaSimulate(st) {
   return { next, report };
 }
 
-function lavkaRollEvent(st) {
-  const pids = lavkaUnlocked(st);
+function lavkaRollEvent(st, rng = Math.random) {
   const pool = [];
   for (const [id, e] of Object.entries(LAVKA_EVENTS)) {
     if (lavkaChapterOf("events", id) > (st.chapter || 1)) continue;
     for (let i = 0; i < e.weight; i++) pool.push(id);
   }
-  const id = lavkaRand(pool), def = LAVKA_EVENTS[id];
+  return lavkaMakeEvent(st, lavkaRand(pool, rng), rng);
+}
+
+/* Событие заданного вида: длительность, товар и потолок — случайные. */
+function lavkaMakeEvent(st, id, rng = Math.random) {
+  const pids = lavkaUnlocked(st), def = LAVKA_EVENTS[id];
   const [d0, d1] = def.days;
-  const ev = { id, daysLeft: d0 + Math.floor(Math.random() * (d1 - d0 + 1)) };
-  if (def.needsProduct) ev.product = lavkaRand(pids);
+  const ev = { id, daysLeft: d0 + Math.floor(rng() * (d1 - d0 + 1)) };
+  if (def.needsProduct) ev.product = lavkaRand(pids, rng);
   if (id === "ceiling") {
     const m = lavkaParams(st, "main", ev.product, true);
     ev.cap = Math.round(m.cBuy + 0.55 * (m.pOpt - m.cBuy));
   }
   return ev;
+}
+
+/* ===== Экзамен уровня 1 =====
+   3 независимых дня на копии лавки (песочница: касса и дни основной игры не меняются):
+   обычный день, сдвиг спроса, политика. Подсказок нет, тетрадь — можно. Эффективность = прибыль игрока /
+   прибыль бота-оптимизатора на тех же сидах (удача одинаковая). Пересдачи без ограничений, в зачёт — лучшая. */
+const LAVKA_EXAM_FROM_DAY = 22;
+const LAVKA_EXAM_KINDS = [
+  { kind: "normal", title: "Обычный день", events: [] },
+  { kind: "shift", title: "Сдвиг спроса", events: ["heat", "rain", "festival"] },
+  { kind: "policy", title: "Политика", events: ["tax", "ceiling"] },
+];
+const LAVKA_MEDALS = [
+  { id: "gold", min: 0.95, emoji: "🥇", title: "Золото" },
+  { id: "silver", min: 0.85, emoji: "🥈", title: "Серебро" },
+  { id: "bronze", min: 0.7, emoji: "🥉", title: "Бронза" },
+];
+const lavkaExamOpen = (st) => (st.chapter || 1) >= LAVKA_CHAPTERS.length && st.day >= LAVKA_EXAM_FROM_DAY;
+const lavkaExamMedal = (eff) => LAVKA_MEDALS.find((m) => eff >= m.min - 1e-12) || null;
+
+/* Состояние лавки в i-й день экзамена: без запасов, без кассового ограничения, событие сценария. */
+function lavkaExamDayState(st, exam, i, settings) {
+  return {
+    ...st, day: st.day + i, event: exam.days[i].event, stock: { main: {}, office: {} },
+    cash: 1e7, debt: 0, settings: settings || exam.settings, last: null, examActive: null,
+  };
+}
+
+function lavkaExamNew(st, seed) {
+  const rng = lavkaRng(seed);
+  const exam = { seed, days: [], results: [], settings: JSON.parse(JSON.stringify(st.settings)) };
+  LAVKA_EXAM_KINDS.forEach((k, i) => {
+    let event = null;
+    if (k.events.length) {
+      const id = lavkaRand(k.events, rng);
+      event = { ...lavkaMakeEvent(lavkaExamDayState(st, { ...exam, days: [...exam.days, { event: null }] }, i), id, rng), daysLeft: 1 };
+    }
+    exam.days.push({ kind: k.kind, title: k.title, event, seed: Math.floor(rng() * 2 ** 31) });
+  });
+  return exam;
+}
+
+/* Бот-оптимизатор: цены — план точки с мощностью (MR = MC + λ), закупка — общий множитель к плановому объёму,
+   выбранный по ожидаемой прибыли (Монте-Карло на своих сидах, не на сиде экзамена). */
+function lavkaExamBotSettings(dayState) {
+  const settings = JSON.parse(JSON.stringify(dayState.settings));
+  const plans = Object.fromEntries(lavkaOpenPoints(dayState).map((p) => [p, lavkaPlan(dayState, p)]));
+  const make = (mult) => {
+    const s = JSON.parse(JSON.stringify(settings));
+    for (const p of Object.keys(plans)) for (const pid of lavkaUnlocked(dayState)) {
+      const r = plans[p].rows[pid];
+      s[p][pid] = { price: Math.max(1, Math.round(r.pOpt)), order: Math.max(0, Math.round(r.qOpt * mult)) };
+    }
+    return s;
+  };
+  let best = null, bestProfit = -Infinity;
+  for (const mult of [0.9, 0.94, 0.98, 1.02, 1.06, 1.1, 1.14]) {
+    const s = make(mult), rng = lavkaRng(99991);
+    let sum = 0;
+    for (let n = 0; n < 60; n++) sum += lavkaSimulate({ ...dayState, settings: s }, rng).report.profit;
+    if (sum > bestProfit) { bestProfit = sum; best = s; }
+  }
+  return best;
+}
+
+function lavkaExamPlayDay(st, exam, settings) {
+  const i = exam.results.length, d = exam.days[i];
+  const report = lavkaSimulate(lavkaExamDayState(st, exam, i, settings), lavkaRng(d.seed)).report;
+  const base = lavkaExamDayState(st, exam, i);
+  const bot = lavkaSimulate({ ...base, settings: lavkaExamBotSettings(base) }, lavkaRng(d.seed)).report;
+  const results = [...exam.results, { player: report.profit, bot: bot.profit, report: { ...report, tokens: undefined } }];
+  const next = { ...exam, results, settings: JSON.parse(JSON.stringify(settings)) };
+  return { exam: next, report, done: results.length === exam.days.length };
+}
+
+function lavkaExamEfficiency(exam) {
+  const p = exam.results.reduce((s, r) => s + r.player, 0), b = exam.results.reduce((s, r) => s + r.bot, 0);
+  return b > 0 ? p / b : 0;
+}
+
+/* Итог: касса и дни основной игры не меняются; в зачёт — лучшая попытка. */
+function lavkaExamFinish(st, exam) {
+  const eff = lavkaExamEfficiency(exam), medal = lavkaExamMedal(eff);
+  const prev = st.examBest || { eff: -Infinity, medal: null, attempts: 0 };
+  const better = eff > prev.eff;
+  return {
+    ...st, examActive: null,
+    examBest: { eff: better ? eff : prev.eff, medal: better ? (medal ? medal.id : null) : prev.medal, day: better ? st.day : prev.day, attempts: (prev.attempts || 0) + 1 },
+  };
 }
 
 const LAVKA_GOALS = [
@@ -649,5 +756,7 @@ export {
   lavkaSimulate, lavkaRollEvent, lavkaFit, lavkaFmt, lavkaRub, LAVKA_MONO,
   lavkaPlan, lavkaVerdict, lavkaLoad, lavkaFitStatus, LAVKA_MODEL_VERSION, LAVKA_SIGN_MULT,
   lavkaCeilingParadox, lavkaShownLambda, LAVKA_LAMBDA_SHOWN,
+  lavkaRng, lavkaMakeEvent, LAVKA_EXAM_FROM_DAY, LAVKA_EXAM_KINDS, LAVKA_MEDALS, lavkaExamOpen, lavkaExamMedal,
+  lavkaExamDayState, lavkaExamNew, lavkaExamBotSettings, lavkaExamPlayDay, lavkaExamEfficiency, lavkaExamFinish,
   LAVKA_CHAPTERS, LAVKA_ORACLE_DAYS, lavkaChapterOf, lavkaUpgradeOpen, lavkaChapterByDay,
 };

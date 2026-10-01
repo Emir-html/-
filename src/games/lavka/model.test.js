@@ -385,3 +385,67 @@ test("запасной вход в главу 2: с 14-го дня — 3 дня 
   assert.equal(run(14, 1).next.chapter, 1, "нужно 3 дня подряд");
   assert.equal(run(14, 1).next.cleanStreak, 2);
 });
+
+/* ===== Генератор с сидом и экзамен уровня 1 ===== */
+
+const examReady = () => { const st = fresh(); st.day = 22; st.chapter = 3; st.upgrades.analyst = true; st.cash = 5000; return st; };
+
+test("генератор с сидом: одинаковый сид — одинаковый день", () => {
+  const a = L.lavkaRng(42), b = L.lavkaRng(42), c = L.lavkaRng(43);
+  const sa = [a(), a(), a()], sb = [b(), b(), b()];
+  assert.deepEqual(sa, sb); assert.notDeepEqual(sa, [c(), c(), c()]);
+  for (const x of sa) assert.ok(x >= 0 && x < 1);
+  const st = fresh(); st.event = null;
+  const r1 = L.lavkaSimulate(st, L.lavkaRng(7)).report, r2 = L.lavkaSimulate(st, L.lavkaRng(7)).report;
+  assert.equal(r1.profit, r2.profit);
+  assert.deepEqual(r1.rows.map((r) => r.D), r2.rows.map((r) => r.D));
+});
+
+test("экзамен открывается в главе 3 с 22-го дня", () => {
+  const st = examReady();
+  assert.equal(L.lavkaExamOpen(st), true);
+  assert.equal(L.lavkaExamOpen({ ...st, day: 21 }), false);
+  assert.equal(L.lavkaExamOpen({ ...st, chapter: 2 }), false);
+});
+
+test("экзамен: 3 сценария (обычный / сдвиг спроса / политика), детерминированы сидом", () => {
+  const st = examReady();
+  const e1 = L.lavkaExamNew(st, 101), e2 = L.lavkaExamNew(st, 101);
+  assert.deepEqual(e1.days, e2.days);
+  assert.deepEqual(e1.days.map((d) => d.kind), ["normal", "shift", "policy"]);
+  assert.equal(e1.days[0].event, null);
+  assert.ok(["heat", "rain", "festival"].includes(e1.days[1].event.id));
+  assert.ok(["tax", "ceiling"].includes(e1.days[2].event.id));
+  const kinds = new Set();
+  for (let s = 1; s < 60; s++) kinds.add(L.lavkaExamNew(st, s).days[2].event.id);
+  assert.equal(kinds.size, 2, "встречаются и акциз, и потолок");
+});
+
+test("экзамен: игра как бот даёт эффективность 100%, плохие цены — без медали; касса не меняется", () => {
+  const st = examReady();
+  let ex = L.lavkaExamNew(st, 5);
+  for (let i = 0; i < 3; i++) ex = L.lavkaExamPlayDay(st, ex, L.lavkaExamBotSettings(L.lavkaExamDayState(st, ex, i))).exam;
+  assert.equal(ex.results.length, 3);
+  near(L.lavkaExamEfficiency(ex), 1, 1e-9);
+  assert.equal(L.lavkaExamMedal(1).id, "gold");
+  let bad = L.lavkaExamNew(st, 5);
+  for (let i = 0; i < 3; i++) {
+    const s = JSON.parse(JSON.stringify(L.lavkaExamDayState(st, bad, i).settings));
+    for (const pid of L.LAVKA_PIDS) s.main[pid] = { price: L.LAVKA_PRODUCTS[pid].c + 3, order: 150 };
+    bad = L.lavkaExamPlayDay(st, bad, s).exam;
+  }
+  assert.ok(L.lavkaExamEfficiency(bad) < 0.7, `эффективность ${L.lavkaExamEfficiency(bad)}`);
+  assert.equal(L.lavkaExamMedal(L.lavkaExamEfficiency(bad)), null);
+  const after = L.lavkaExamFinish(st, ex);
+  assert.equal(after.cash, st.cash); assert.equal(after.day, st.day);
+  assert.equal(after.examBest.medal, "gold"); assert.equal(after.examBest.attempts, 1);
+  const worse = L.lavkaExamFinish(after, bad);
+  assert.equal(worse.examBest.medal, "gold", "в зачёт идёт лучшая попытка"); assert.equal(worse.examBest.attempts, 2);
+});
+
+test("медали: бронза ≥ 70%, серебро ≥ 85%, золото ≥ 95%", () => {
+  assert.equal(L.lavkaExamMedal(0.69), null);
+  assert.equal(L.lavkaExamMedal(0.7).id, "bronze");
+  assert.equal(L.lavkaExamMedal(0.85).id, "silver");
+  assert.equal(L.lavkaExamMedal(0.95).id, "gold");
+});

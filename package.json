@@ -10,7 +10,8 @@
     "test": "node --test \"src/**/*.test.js\"",
     "balance": "node src/games/lavka/balance.js",
     "build:check": "vite build --mode development --outDir node_modules/.cache/check --emptyOutDir --logLevel error",
-    "check": "npm run build:check && npm test"
+    "check": "npm run build:check && npm test",
+    "exam:calibrate": "node src/games/lavka/exam-calibrate.js"
   },
   "dependencies": {
     "lucide-react": "^1.49.0",
