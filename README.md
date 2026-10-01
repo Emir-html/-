@@ -1,9 +1,32 @@
-# Комплект «Лавка» для Claude Code
+# MirStudy
 
-1. Распакуй архив в отдельную папку, например `Документы/mirstudy-kit`.
-2. Открой Claude Desktop → вкладка Code → выбери эту папку (или в терминале: `cd mirstudy-kit` и `claude`).
-3. Открой `00_ПРОМПТ_ДЛЯ_CLAUDE_CODE.md`, скопируй всё ниже линии и отправь первым сообщением.
-4. Отвечай на вопросы Claude Code кнопками. Шаги 1–4 лучше делать на Sonnet, шаг 5 — на Opus (команда `/model`).
+Личный учебный тренажёр (олимпиада «Высшая проба»: экономика, бизнес, финграмотность; ЕГЭ) и игра «Лавка».
 
-Что внутри — таблица в самом промпте. Источники игры: `sources/CONCEPT_MAP.md` (с чего начать), затем ECONOMICS / BUSINESS / FINLIT.md.
-Проверка без Claude Code: в папке `game` выполнить `npm test` и `node balance.js`.
+## Запуск на своём компьютере
+
+Нужны Node.js 20+ и git.
+
+```bash
+git clone https://github.com/Emir-html/-.git mirstudy
+cd mirstudy
+git checkout claude/inspiring-cray-gwn2yz
+npm install
+npm run dev        # откроется http://localhost:5173
+```
+
+Прогресс хранится в браузере (localStorage через `src/storage-shim.js`). Перенести прогресс из claude.ai:
+«План подготовки» → «Резервная копия прогресса» → «Загрузить из файла» → `data/progress-2026-09-24.json`.
+
+AI-проверка письменных ответов работает только в версии на claude.ai.
+
+## Команды
+
+| Команда | Что делает |
+| --- | --- |
+| `npm run dev` | приложение на localhost |
+| `npm run build` | сборка в `dist/` |
+| `npm test` | тесты модели «Лавки» |
+| `npm run balance -- 40 20` | баланс стратегий (дней, прогонов) |
+| `npm run check` | быстрая сборка esbuild + тесты (после каждой правки) |
+
+Правила проекта — `CLAUDE.md`, этапы игры — `docs/ROADMAP.md`, исходный комплект — `kit/`.
