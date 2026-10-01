@@ -1,7 +1,14 @@
-/* «Лавка» — экраны (React). Снимок из econ-trainer__17_.jsx.
-   Зависимости из приложения: React (useState, useEffect, useMemo), COLORS, pageBackground, PAGE_BG_SIZE,
-   SessionTimer, иконки lucide-react (ArrowLeft, Moon, Sun, Check, RotateCcw, ChevronDown, ChevronRight, Loader2),
-   window.storage (ключ "lavka-save"), класс ms-rise. Логика — из lavka-model.js. */
+/* «Лавка» — экраны (React). Вынесено из App.jsx (блок «ПЕРЕРЫВ · ЛАВКА») без изменений логики.
+   Тема и таймер — из src/ui, логика — из ./model.js. Хранилище — window.storage, ключ "lavka-save". */
+import React, { useState, useEffect, useMemo } from "react";
+import { ArrowLeft, Moon, Sun, Check, RotateCcw, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
+import { COLORS, pageBackground, PAGE_BG_SIZE } from "../../ui/theme.js";
+import { SessionTimer } from "../../ui/SessionTimer.jsx";
+import {
+  LAVKA_PRODUCTS, LAVKA_POINTS, LAVKA_CAPACITY, LAVKA_HELPER_CAP, LAVKA_HELPER_WAGE, LAVKA_FRIDGE_KEEP,
+  LAVKA_WEEKDAYS, LAVKA_UPGRADES, LAVKA_EVENTS, LAVKA_GOALS, LAVKA_QUIZ, LAVKA_MONO,
+  lavkaWeekday, lavkaUnlocked, lavkaOpenPoints, lavkaNewState, lavkaParams, lavkaSimulate, lavkaFit, lavkaFmt, lavkaRub,
+} from "./model.js";
 function LavkaStepper({ value, onChange, step = 1, min = 0, max = 9999, suffix }) {
   const btn = { background: COLORS.paperDeep, color: COLORS.ink, border: `1px solid ${COLORS.line}` };
   return (
@@ -757,3 +764,4 @@ function LavkaScreen({ onBack, theme, onToggleTheme }) {
   );
 }
 
+export { LavkaScreen };

@@ -1,7 +1,7 @@
 # MirStudy — правила проекта для Claude Code
 
 Личный учебный тренажёр Мира: олимпиада «Высшая проба» (экономика, основы бизнеса, финграмотность), ЕГЭ по обществознанию и русскому.
-Приложение — один React-файл `src/App.jsx` (бывший econ-trainer.jsx, ~48 000 строк). Игра «Лавка» — блок `ПЕРЕРЫВ · ЛАВКА` в нём; логика и экраны выносятся в `src/games/lavka/`.
+Приложение — один React-файл `src/App.jsx` (бывший econ-trainer.jsx, ~48 000 строк). Игра «Лавка» вынесена в `src/games/lavka/` (в App.jsx остался только импорт `LavkaScreen` и правило слияния `lavka-save`).
 Большой файл не читать целиком — искать по именам (grep).
 
 ## Структура
@@ -9,7 +9,7 @@
 - `src/storage-shim.js` — `window.storage` поверх localStorage вне claude.ai
 - `src/state/progress-merge.js` — движок слияния прогресса (копия встроенного `ProgressMerge` в App.jsx)
 - `src/games/lavka/` — `model.js` (чистая логика), `ui.jsx` (экраны), `model.test.js`, `balance.js`
-- `src/ui/theme.js` — общие COLORS, pageBackground, PAGE_BG_SIZE, SessionTimer (после выноса «Лавки»)
+- `src/ui/theme.js` — LIGHT_COLORS, DARK_COLORS, COLORS (изменяемый объект, тему переключает AppRoot), pageBackground, PAGE_BG_SIZE; `src/ui/SessionTimer.jsx` — таймер сессии
 - `docs/` — LAVKA_SPEC.md, ROADMAP.md, GAME_DESIGN.md; `docs/sources/` — выжимки уроков и CONCEPT_MAP.md
 - `data/` — экспорты прогресса Мира (не перезаписывать); `kit/` — исходный комплект как есть (не править)
 - Команды: `npm run dev`, `npm run build`, `npm test`, `npm run balance`
@@ -24,7 +24,7 @@
 
 ## Всегда
 - Перед правкой — план; большие задачи делить на шаги с проверкой после каждого.
-- После правки: `npm run check` (сборка esbuild всего приложения без ошибок + `npm test`). Ни одной удалённой строки учебного контента: `git diff --stat`, `git diff | grep '^-' | wc -l`.
+- После правки: `npm run check` (dev-сборка Vite всего приложения без ошибок + `npm test`). Ни одной удалённой строки учебного контента: `git diff --stat`, `git diff | grep '^-' | wc -l`.
 - Логика игры — чистые функции без React (`src/games/lavka/model.js`), экраны — отдельно (`ui.jsx`). Новая механика: сначала тест, потом код, потом `/lavka-balance`.
 - Цвета только через `COLORS` (светлая и тёмная тема), шрифты Figtree и IBM Plex Mono.
 - Анимации ≤ 300 мс и с `prefers-reduced-motion`.
