@@ -315,6 +315,7 @@ function LavkaReport({ rep, st, onNext }) {
       {rep.newChapter && (() => { const ch = LAVKA_CHAPTERS[rep.newChapter - 1]; return (
         <LavkaCard tint={COLORS.blueSoft}>
           <p className="font-semibold">📖 Открыта глава {ch.n}: «{ch.title}»</p>
+          {rep.chapterFallback && <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Открыта запасным путём: 3 дня подряд с прибылью и без дефицита. Цель «Чуйка монополиста» ещё ждёт тебя — за неё по-прежнему награда.</p>}
           <p className="text-sm mt-1" style={{ color: COLORS.ink }}>
             Новые события: {ch.events.map((id) => LAVKA_EVENTS[id].emoji + " " + LAVKA_EVENTS[id].title).join(", ")}.
             Новые улучшения: {ch.upgrades.map((id) => { const u = LAVKA_UPGRADES.find((x) => x.id === id); return u.emoji + " " + u.title; }).join(", ")}.
@@ -749,7 +750,7 @@ function LavkaScreen({ onBack, theme, onToggleTheme }) {
                   <p className="font-semibold">📖 Глава {cur.n}: «{cur.title}»</p>
                   <p className="text-sm mt-1" style={{ color: COLORS.ink }}>
                     {next && g
-                      ? <>Чтобы открыть главу {next.n} «{next.title}»: {st.goals[g.id] ? "✓" : "выполни"} цель {g.emoji} «{g.title}»{st.day < next.fromDay ? ` и доработай до ${next.fromDay}-го дня` : ""}.</>
+                      ? <>Чтобы открыть главу {next.n} «{next.title}»: {st.goals[g.id] ? "✓" : "выполни"} цель {g.emoji} «{g.title}»{st.day < next.fromDay ? ` и доработай до ${next.fromDay}-го дня` : ""}.{cur.fallback && !st.goals[g.id] ? ` Запасной путь: с ${cur.fallback.fromDay}-го дня — ${cur.fallback.streak} дня подряд с прибылью и без дефицита (сейчас ${st.cleanStreak || 0}).` : ""}</>
                       : "Все главы уровня открыты. Скоро — экзамен уровня."}
                   </p>
                   {st.day <= LAVKA_ORACLE_DAYS && <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Первую неделю отчёт подсказывает по истинному спросу. С {LAVKA_ORACLE_DAYS + 1}-го дня — только по твоей тетради.</p>}

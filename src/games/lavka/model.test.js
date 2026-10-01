@@ -370,3 +370,18 @@ test("в главе 1 отчёт называет, что мешает цели 
   const { report } = L.lavkaSimulate(st);
   assert.ok(report.chapterHint && /Лимонад/.test(report.chapterHint) && /кончил/.test(report.chapterHint), report.chapterHint);
 });
+
+test("запасной вход в главу 2: с 14-го дня — 3 дня подряд без дефицита и с прибылью, цель не засчитывается", () => {
+  const run = (day, streak) => {
+    const st = fresh(); st.day = day; st.cleanStreak = streak; st.cash = 1e5;
+    st.settings.main.lemonade = { price: 70, order: 60 };   // спрос при 70 ₽ ≈ 20 — дефицита нет
+    st.settings.main.croissant = { price: 70, order: 60 };  // ≈ 25
+    return L.lavkaSimulate(st);
+  };
+  const ok = run(14, 2);
+  assert.equal(ok.next.chapter, 2); assert.equal(ok.report.newChapter, 2); assert.equal(ok.report.chapterFallback, true);
+  assert.ok(!ok.next.goals.mrmc, "цель «Чуйка монополиста» сама не засчитывается");
+  assert.equal(run(13, 5).next.chapter, 1, "до 14-го дня запасного входа нет");
+  assert.equal(run(14, 1).next.chapter, 1, "нужно 3 дня подряд");
+  assert.equal(run(14, 1).next.cleanStreak, 2);
+});

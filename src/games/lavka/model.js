@@ -75,7 +75,7 @@ const LAVKA_UPGRADES = [
 /* Главы уровня 1: механики открываются, когда прошла неделя И выполнена ключевая цель прошлой главы.
    «Оракул» (вердикт по истинным параметрам) — только первые LAVKA_ORACLE_DAYS дней. */
 const LAVKA_CHAPTERS = [
-  { n: 1, title: "Спрос", fromDay: 1, goal: "mrmc",
+  { n: 1, title: "Спрос", fromDay: 1, goal: "mrmc", fallback: { fromDay: 14, streak: 3 },
     events: ["heat", "rain", "festival"], upgrades: ["analyst", "fridge", "helper"] },
   { n: 2, title: "Издержки и налоги", fromDay: 8, goal: "week",
     events: ["flour", "tax", "blogger"], upgrades: ["sign", "supplier", "coffee"] },
@@ -479,9 +479,15 @@ function lavkaSimulate(st) {
   }
 
   /* Новая глава: прошла неделя И выполнена ключевая цель текущей главы. */
-  let chapter = st.chapter || 1, newChapter = null;
+  /* Запасной вход: если ключевая цель не даётся, с fallback.fromDay хватает fallback.streak дней подряд
+     с прибылью и без дефицита. Цель при этом не засчитывается (и награды нет). */
+  const cleanStreak = profit > 0 && rows.every((r) => r.lostStock === 0) ? (st.cleanStreak || 0) + 1 : 0;
+  let chapter = st.chapter || 1, newChapter = null, chapterFallback = false;
   const upcoming = LAVKA_CHAPTERS[chapter], cur = LAVKA_CHAPTERS[chapter - 1];
-  if (upcoming && st.day + 1 >= upcoming.fromDay && cur.goal && goals[cur.goal]) { chapter += 1; newChapter = chapter; }
+  if (upcoming && st.day + 1 >= upcoming.fromDay) {
+    if (cur.goal && goals[cur.goal]) { chapter += 1; newChapter = chapter; }
+    else if (cur.fallback && st.day >= cur.fallback.fromDay && cleanStreak >= cur.fallback.streak) { chapter += 1; newChapter = chapter; chapterFallback = true; }
+  }
 
   /* Следующее утро: событие стареет, возможно, приходит новое. */
   const nextBase = { ...st, day: st.day + 1, rep: repNew, chapter };
@@ -500,7 +506,7 @@ function lavkaSimulate(st) {
   cash += reward;
 
   const report = {
-    day: st.day, rows, revenue, buyCost, taxPaid, fixed, profit, repaid, reward, newGoals, newChapter, chapterHint,
+    day: st.day, rows, revenue, buyCost, taxPaid, fixed, profit, repaid, reward, newGoals, newChapter, chapterFallback, chapterHint,
     event: st.event, tokens, sold, repDelta, weekday: lavkaWeekday(st.day),
   };
   const stats = {
@@ -509,7 +515,7 @@ function lavkaSimulate(st) {
     bestDay: st.stats.bestDay == null || profit > st.stats.bestDay ? profit : st.stats.bestDay,
   };
   const next = {
-    ...nextBase, at: Date.now(), cash: Math.round(cash), debt, stock, obs, goals, stats, event, rep: repNew, plusStreak,
+    ...nextBase, at: Date.now(), cash: Math.round(cash), debt, stock, obs, goals, stats, event, rep: repNew, plusStreak, cleanStreak,
     history: [...st.history, { day: st.day, profit: Math.round(profit) }].slice(-60),
     last: { ...report, tokens: undefined },
   };
