@@ -464,7 +464,8 @@ function lavkaSimulate(st) {
   if (plusStreak >= 7) hit("week");
   if (st.day >= 30) hit("day30");
 
-  /* Что мешает ключевой цели главы 1 — только то, что игрок видит сам (без чисел оракула). */
+  /* Что мешает ключевой цели главы 1. Цель судится по истинному спросу, поэтому и подсказка — по нему
+     (без чисел); после 7-го дня тетрадь даёт лишь оценку, и это сказано прямо. */
   let chapterHint = null;
   if ((st.chapter || 1) === 1 && !goals.mrmc) {
     const why = [];
@@ -472,7 +473,7 @@ function lavkaSimulate(st) {
       const nm = `«${LAVKA_PRODUCTS[r.pid].name}»`;
       if (r.lostStock > 0) why.push(`${nm}: товар кончился`);
       else if (r.cap != null) why.push(`${nm}: действует потолок`);
-      else if (r.mrTrue == null || Math.abs(r.mrTrue - r.mc - lavkaShownLambda(r.lambda)) > 3) why.push(`${nm}: цена ещё не там, где MR = MC${lavkaShownLambda(r.lambda) > 0 ? " + λ" : ""}`);
+      else if (r.mrTrue == null || Math.abs(r.mrTrue - r.mc - lavkaShownLambda(r.lambda)) > 3) why.push(`${nm}: по истинному спросу цена ещё не там, где MR = MC${lavkaShownLambda(r.lambda) > 0 ? " + λ" : ""}${st.day > LAVKA_ORACLE_DAYS ? " (тетрадь даёт лишь оценку — уточни её, разнеся цены)" : ""}`);
     }
     if (why.length) chapterHint = `Цель «Чуйка монополиста» (ключ к главе 2) сегодня не засчитана — ${why.join("; ")}.`;
   }
