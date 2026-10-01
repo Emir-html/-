@@ -8,7 +8,7 @@ import {
   LAVKA_PRODUCTS, LAVKA_POINTS, LAVKA_CAPACITY, LAVKA_HELPER_CAP, LAVKA_HELPER_WAGE, LAVKA_FRIDGE_KEEP,
   LAVKA_WEEKDAYS, LAVKA_UPGRADES, LAVKA_EVENTS, LAVKA_GOALS, LAVKA_QUIZ, LAVKA_MONO,
   lavkaWeekday, lavkaUnlocked, lavkaOpenPoints, lavkaNewState, lavkaParams, lavkaSimulate, lavkaFit, lavkaFmt, lavkaRub,
-  lavkaVerdict, lavkaLoad,
+  lavkaVerdict, lavkaLoad, lavkaShownLambda,
 } from "./model.js";
 function LavkaStepper({ value, onChange, step = 1, min = 0, max = 9999, suffix }) {
   const btn = { background: COLORS.paperDeep, color: COLORS.ink, border: `1px solid ${COLORS.line}` };
@@ -137,7 +137,7 @@ function LavkaProductRow({ st, point, pid, onSet, fit }) {
   const base = lavkaParams(st, point, pid, true);
   const maxP = Math.ceil((base.choke * 1.3) / 10) * 10;
   const effP = m.cap != null ? Math.min(set.price, m.cap) : set.price;
-  /* Оценка тетради — для «обычного будня»; умножаем на сегодняшний k (день недели × лояльность).
+  /* Оценка тетради — для «обычного будня»; умножаем на сегодняшний k (день недели × лояльность × вывеска).
      В дни событий кривая другая, поэтому прогноз не показываем. */
   const est = fit && m.base ? Math.max(0, Math.round((fit.alpha - fit.beta * effP) * m.k)) : null;
   const estProfit = est != null ? (effP - m.mc) * Math.min(est, carried + set.order) - m.cBuy * Math.max(0, carried + set.order - est) * (st.upgrades.fridge ? 1 - LAVKA_FRIDGE_KEEP : 1) : null;
@@ -187,8 +187,8 @@ function LavkaProductRow({ st, point, pid, onSet, fit }) {
       {lastRow && (
         <p className="text-xs mt-1.5" style={{ color: COLORS.inkSoft, fontFamily: LAVKA_MONO }}>
           вчера: {lastRow.P} ₽, хотели {lastRow.D}, продано {lastRow.S}
-          {lastRow.mr != null && (() => { const lam = (lastRow.lambda || 0) >= 2 ? lastRow.lambda : 0, t = lastRow.mc + lam;
-            return <> , MR {lastRow.mr.toFixed(0)} {Math.abs(lastRow.mr - t) <= 3 ? "≈" : lastRow.mr > t ? ">" : "<"} {lam >= 2 ? `MC + λ ${t.toFixed(0)}` : `MC ${lastRow.mc.toFixed(0)}`}</>; })()}
+          {lastRow.mr != null && (() => { const lam = lavkaShownLambda(lastRow.lambda), t = lastRow.mc + lam;
+            return <> , MR {lastRow.mr.toFixed(0)} {Math.abs(lastRow.mr - t) <= 3 ? "≈" : lastRow.mr > t ? ">" : "<"} {lam > 0 ? `MC + λ ${t.toFixed(0)}` : `MC ${lastRow.mc.toFixed(0)}`}</>; })()}
         </p>
       )}
     </LavkaCard>
@@ -242,7 +242,7 @@ function LavkaDemandChart({ st, point, pid }) {
         ))}
       </svg>
       <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>
-        ● обычный день, ○ день события (в оценку не входит). Спрос пересчитан к обычному будню при лояльности 100%: выходные и лояльность — известные множители, их убираем, чтобы видеть саму кривую.
+        ● обычный день, ○ день события (в оценку не входит). Спрос пересчитан к обычному будню при лояльности 100%: выходные, лояльность и вывеска меняют число покупателей — известные множители, их убираем, чтобы видеть саму кривую.
       </p>
       {!st.upgrades.analyst && (
         <p className="text-sm mt-3" style={{ color: COLORS.ink }}>
@@ -341,16 +341,16 @@ function LavkaReport({ rep, st, onNext }) {
               {r.carry > 0 && cell("В холодильник", r.carry)}
               {cell("Излишек покупателей", lavkaRub(r.cs))}
               {cell("Твой излишек", lavkaRub(r.ps))}
-              {cell("DWL", lavkaRub(r.dwl), COLORS.rust)}
+              {cell("DWL (к P = MC)", lavkaRub(r.dwl), COLORS.rust)}
             </div>
             <p className="text-sm mt-3" style={{ color: COLORS.ink }}>{verdict(r)}</p>
             {r.el != null && r.el < 1 && r.mr != null && (
               <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>|E| &lt; 1 — неэластичный участок: MR &lt; 0. Монополист здесь не стоит никогда: подняв цену, получишь больше выручки при меньших издержках.</p>
             )}
             {r.capacityBound && (
-              <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Прилавок не справился с потоком: мощность — ещё одно ограничение.{r.lambda >= 2
+              <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Прилавок не справился с потоком: мощность — ещё одно ограничение.{lavkaShownLambda(r.lambda) > 0
                 ? ` При лучших ценах место у прилавка стоило бы λ ≈ ${r.lambda.toFixed(0)} ₽ (теневая цена мощности), и правило становится MR = MC + λ: выгоднее поднять цены, чем держать очередь.`
-                : " Мощность хватает на оптимальные цены — очередь появилась из-за слишком низкой цены."}</p>
+                : " Мощности хватает на лучшие цены — очередь из-за низкой цены или случайного всплеска спроса."}</p>
             )}
           </LavkaCard>
         );

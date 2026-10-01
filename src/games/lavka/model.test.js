@@ -205,3 +205,55 @@ test("вердикт: склонение «покупатель» и λ < 2 ₽ 
   assert.match(L.lavkaVerdict(row({ lostStock: 12, D: 72 })), /12 покупателей ушли/);
   assert.ok(!/λ/.test(L.lavkaVerdict(row({ lambda: 1.1 }))));
 });
+
+/* ===== Повторное ревью: потолок при узком месте ===== */
+
+const ceilingDay = (day, extra = {}) => {
+  const st = fresh(); st.day = day; Object.assign(st.upgrades, extra);
+  st.event = { id: "ceiling", daysLeft: 1, product: "lemonade", cap: 37 };
+  return st;
+};
+
+test("потолок ровно окупает место (λ = потолок − MC): вердикт не противоречит себе и называет объём", () => {
+  const st = ceilingDay(1), plan = L.lavkaPlan(st, "main");
+  near(plan.lambda, 17, 1e-3);
+  const q = plan.rows.lemonade.qOpt;
+  assert.ok(q > 0 && q < 86, `частичная продажа, q = ${q}`);
+  const v = L.lavkaVerdict(row({ P: 37, priceSet: 37, cap: 37, mr: 2 * 37 - 80, lambda: plan.lambda, qBest: q }));
+  assert.ok(!/37 ₽ < /.test(v), v);
+  assert.match(v, new RegExp(String(Math.round(q))));
+});
+
+test("цель «Парадокс потолка» — только если потолок действительно увеличивает выгодный объём", () => {
+  const play = (st) => {
+    const m = L.lavkaParams(st, "main", "lemonade");
+    st.settings.main.lemonade = { price: 37, order: Math.round(m.A - m.B * 37) };
+    st.settings.main.croissant = { price: 60, order: 0 };
+    for (const pid of ["coffee", "icecream"]) st.settings.main[pid] = { price: 200, order: 0 };
+    st.cash = 1e5;
+    return L.lavkaSimulate(st).report.newGoals.includes("ceiling");
+  };
+  assert.equal(L.lavkaCeilingParadox(ceilingDay(1)), true, "понедельник: потолок поднимает выгодный объём");
+  assert.equal(play(ceilingDay(1)), true);
+  const sat = ceilingDay(6, { coffee: true, freezer: true });
+  assert.equal(L.lavkaCeilingParadox(sat), false, "суббота с полным прилавком: место дороже потолка");
+  assert.equal(play(sat), false);
+});
+
+test("цель «Чуйка монополиста» согласована с вердиктом при малой λ", () => {
+  const st = fresh(), plan = L.lavkaPlan(st, "main"); // будни: λ ≈ 1,1
+  assert.ok(plan.lambda > 0 && plan.lambda < 2);
+  for (const pid of ["lemonade", "croissant"]) {
+    const m = L.lavkaParams(st, "main", pid);
+    st.settings.main[pid] = { price: Math.round(m.pOpt), order: Math.round(m.qOpt * 1.2) };
+  }
+  st.cash = 1e5;
+  let hits = 0;
+  for (let i = 0; i < 20; i++) {
+    const { report } = L.lavkaSimulate(st);
+    const vOk = report.rows.every((r) => /≈/.test(L.lavkaVerdict(r)));
+    if (vOk && report.rows.every((r) => r.lostStock === 0)) hits += report.newGoals.includes("mrmc") ? 1 : 0;
+    else hits += 1;
+  }
+  assert.equal(hits, 20, "если вердикт говорит «≈» и товара хватило — цель засчитывается");
+});
