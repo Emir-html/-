@@ -328,3 +328,45 @@ test("вердикт по тетради не врёт в день событи�
   const q = L.lavkaVerdict({ ...row({ mode: "notebook", mr: 30, lostQueue: 10, D: 80, S: 70 }) });
   assert.match(q, /очеред|прилав/i);
 });
+
+/* ===== Ревью глав: тетрадь в дни налогов, тексты при очереди, подсказка главы ===== */
+
+test("акциз, мука, потолок и фестиваль не портят тетрадь: спрос в эти дни прежний", () => {
+  for (const ev of [{ id: "tax", daysLeft: 1, product: "lemonade" }, { id: "flour", daysLeft: 1 }, { id: "ceiling", daysLeft: 1, product: "lemonade", cap: 37 }, { id: "festival", daysLeft: 1 }]) {
+    const st = fresh(); st.event = ev;
+    assert.equal(L.lavkaParams(st, "main", "lemonade").base, true, ev.id);
+  }
+  for (const ev of [{ id: "heat", daysLeft: 1 }, { id: "blogger", daysLeft: 1 }]) {
+    const st = fresh(); st.event = ev;
+    const pid = ev.id === "blogger" ? "croissant" : "lemonade";
+    assert.equal(L.lavkaParams(st, "main", pid).base, false, ev.id);
+  }
+  const st = fresh(); st.day = 9; st.chapter = 2; st.cash = 1e5; st.upgrades.analyst = true;
+  st.obs.main.lemonade = goodObs; st.event = { id: "tax", daysLeft: 1, product: "lemonade" };
+  st.settings.main.lemonade = { price: 45, order: 70 };
+  const r = L.lavkaSimulate(st).report.rows.find((x) => x.pid === "lemonade");
+  assert.equal(r.mode, "notebook"); near(r.mc, 30); near(r.mr, 10, 1e-6);
+});
+
+test("тетрадь: «цены слишком близки» отличается от «мало дней»", () => {
+  assert.equal(L.lavkaFitStatus(goodObs.slice(0, 2)).reason, "few");
+  const flat = [50, 50, 51].map((P, i) => ({ P, D: 60 + i, k: 1, day: i + 1, base: true }));
+  assert.equal(L.lavkaFitStatus(flat).reason, "flat");
+  assert.ok(L.lavkaFitStatus(goodObs).fit);
+});
+
+test("вердикт по тетради при очереди не противоречит себе", () => {
+  const near0 = L.lavkaVerdict(row({ mode: "notebook", mr: 21, lostQueue: 10, D: 80, S: 70 }));
+  assert.ok(!/близка к оптимуму/.test(near0), near0);
+  assert.match(near0, /подними цену/i);
+  const pos = L.lavkaVerdict(row({ mode: "notebook", mr: 35, lostQueue: 10, D: 80, S: 70 }));
+  assert.match(pos, /мест/);
+  assert.ok(!/удлинит очередь/.test(pos), pos);
+});
+
+test("в главе 1 отчёт называет, что мешает цели «Чуйка монополиста»", () => {
+  const st = fresh(); st.cash = 1e5;
+  st.settings.main.lemonade = { price: 50, order: 10 }; // товар точно кончится
+  const { report } = L.lavkaSimulate(st);
+  assert.ok(report.chapterHint && /Лимонад/.test(report.chapterHint) && /кончил/.test(report.chapterHint), report.chapterHint);
+});

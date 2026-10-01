@@ -1,9 +1,10 @@
-/* Баланс «Лавки»: node balance.js [дней=40] [прогонов=20]
+/* Баланс «Лавки»: node balance.js [дней=40] [прогонов=20] [open]
+   open — все главы открыты с первого дня: видно, во сколько обходится сама ошибка, без цены «застрял в главе».
    Сравнивает стратегии и печатает среднюю прибыль. Ворота этапа 2:
    оптимальная стратегия должна обгонять все «тупые», а их разрыв — быть заметным. */
 import * as L from "./model.js";
 
-const DAYS = Number(process.argv[2] || 40), RUNS = Number(process.argv[3] || 20);
+const DAYS = Number(process.argv[2] || 40), RUNS = Number(process.argv[3] || 20), OPEN = process.argv[4] === "open";
 const BUY = [[5, "analyst"], [12, "coffee"], [14, "helper"], [20, "fridge"], [25, "office"]];
 
 /* m — параметры товара (lavkaParams), b — план точки с учётом мощности (lavkaPlan): MR = MC + λ. */
@@ -19,6 +20,7 @@ const strategies = {
 
 function play(fn) {
   let st = L.lavkaNewState(), total = 0, firstBuy = {};
+  if (OPEN) st.chapter = L.LAVKA_CHAPTERS.length;
   for (let d = 0; d < DAYS; d++) {
     for (const [day, id] of BUY) {
       const u = L.LAVKA_UPGRADES.find((x) => x.id === id);
@@ -47,5 +49,5 @@ for (const [name, fn] of Object.entries(strategies)) {
     "глава к концу": (ch / RUNS).toFixed(1), "1-я покупка, день": avg(first), "2-я точка, день": avg(office) });
 }
 rows.sort((a, b) => b["прибыль за период"] - a["прибыль за период"]);
-console.log(`Дней: ${DAYS}, прогонов на стратегию: ${RUNS}`);
+console.log(`Дней: ${DAYS}, прогонов на стратегию: ${RUNS}${OPEN ? ", все главы открыты" : ""}`);
 console.table(rows);

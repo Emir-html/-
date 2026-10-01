@@ -189,7 +189,9 @@ function lavkaParams(st, point, pid, ignoreEvent) {
   if (ev) {
     const eff = LAVKA_EVENTS[ev.id].effect(pid, point, ev);
     if (eff) {
-      base = false;
+      /* Наблюдение «чистое», если событие не меняет кривую одного покупателя: налог и мука меняют MC,
+         потолок — цену, фестиваль — только число покупателей (учтено в k). */
+      if (eff.aMult || eff.bMult || eff.comp) base = false;
       if (eff.nMult) { A *= eff.nMult; B *= eff.nMult; k *= eff.nMult; }
       if (eff.aMult) A *= eff.aMult;
       if (eff.bMult) B *= eff.bMult;
@@ -312,9 +314,11 @@ function lavkaFactsVerdict(r) {
   if (r.lostQueue > 0) facts.push(`${lavkaBuyers(r.lostQueue)} из очереди`);
   if (r.spoiled > 0) facts.push(`выброшено ${r.spoiled}`);
   const hint = r.why === "event"
-    ? "Сегодня событие — тетрадь не знает сегодняшнюю кривую спроса, поэтому MR не оцениваем."
+    ? "Сегодня событие изменило саму кривую спроса — тетрадь её не знает, поэтому MR не оцениваем."
     : r.why === "few-obs"
       ? "Для оценки MR тетради нужно хотя бы 3 обычных дня с разными ценами."
+      : r.why === "flat"
+        ? "Обычных дней в тетради хватает, но цены в них слишком близки — наклон спроса не виден. Разнеси цены сильнее (на 5–10 ₽)."
       : "Подсказки «оракула» были только в первую неделю. Чтобы оценивать MR, нужна тетрадь аналитика и 3 обычных дня с разными ценами.";
   return `Факты дня: ${facts.join(", ")}. ${hint}`;
 }
@@ -326,12 +330,16 @@ function lavkaNotebookVerdict(r) {
   const mr = `по тетради MR ≈ ${r.mr.toFixed(0)} ₽`, mc = `MC = ${r.mc.toFixed(0)} ₽`;
   if (r.cap != null && r.P >= r.cap) return `Цена стоит на потолке ${r.cap} ₽: до объёма D(потолок) каждая единица приносит потолок, ${r.cap >= r.mc ? "это выше" : "это ниже"} ${mc}. Оцени по тетради D(потолок) и сколько мест у прилавка останется после других товаров.`;
   if (r.lostStock > 0) return `Товар кончился: ${lavkaBuyers(r.lostStock)} без покупки. Сначала закупка — спрос при ${r.P} ₽ был ${r.D}. Цена: ${mr}, ${mc}.`;
-  const queue = r.lostQueue > 0 ? ` Но прилавок не успевал (${lavkaBuyers(r.lostQueue)} из очереди): место у прилавка тоже стоит денег, поэтому в оптимуме MR должен быть выше MC.` : "";
-  if (Math.abs(d) <= 3) return `${mr} ≈ ${mc} — по твоей оценке спроса цена близка к оптимуму.${queue}`;
-  if (d > 0) return r.lostQueue > 0
-    ? `${mr} > ${mc}, но снижение цены лишь удлинит очередь.${queue}`
-    : `${mr} > ${mc}: по оценке тетради следующая единица выгодна — снизь цену и закупи больше.`;
-  return `${mr} < ${mc}: по оценке тетради последние единицы продавались себе в убыток — подними цену.${queue}`;
+  const full = `прилавок был полон (${lavkaBuyers(r.lostQueue)} из очереди)`;
+  const placeRule = "пока прилавок полон, место тоже стоит денег: MR = MC + цена места > MC";
+  if (r.lostQueue > 0) {
+    if (Math.abs(d) <= 3) return `${mr} ≈ ${mc}, но ${full}. А ${placeRule} — подними цену, освободишь место под другой товар.`;
+    if (d > 0) return `${mr} > ${mc}, но ${full}. Снизишь цену — этот товар займёт места других, а выручка с места упадёт: ${placeRule}.`;
+    return `${mr} < ${mc}: подними цену — и прибыль вырастет, и место освободится (${full}).`;
+  }
+  if (Math.abs(d) <= 3) return `${mr} ≈ ${mc} — по твоей оценке спроса цена близка к оптимуму.`;
+  if (d > 0) return `${mr} > ${mc}: по оценке тетради следующая единица выгодна — снизь цену и закупи больше.`;
+  return `${mr} < ${mc}: по оценке тетради последние единицы продавались себе в убыток — подними цену.`;
 }
 
 /* Наилучший ответ конкурента на нашу цену P (его MC = базовая закупка). */
@@ -387,12 +395,13 @@ function lavkaSimulate(st) {
       const truth = metrics(r.m.A, r.m.B);
       /* Что видит игрок: первую неделю — истину («оракул»), потом — оценку своей тетради
          (только в обычный день и если в ней ≥ 3 обычных дней), иначе — только факты. */
-      const fit = st.upgrades.analyst && r.m.base ? lavkaFit(st.obs[point]?.[r.pid]) : null;
+      const fs = st.upgrades.analyst && r.m.base ? lavkaFitStatus(st.obs[point]?.[r.pid]) : { fit: null, reason: null };
+      const fit = fs.fit;
       const mode = st.day <= LAVKA_ORACLE_DAYS ? "oracle" : fit ? "notebook" : "facts";
       const shown = mode === "oracle" ? truth
         : mode === "notebook" ? metrics(fit.alpha * r.m.k, fit.beta * r.m.k)
         : { mr: null, el: null, cs: null, dwl: null };
-      const why = mode !== "facts" ? null : !st.upgrades.analyst ? "no-notebook" : !r.m.base ? "event" : "few-obs";
+      const why = mode !== "facts" ? null : !st.upgrades.analyst ? "no-notebook" : !r.m.base ? "event" : fs.reason === "flat" ? "flat" : "few-obs";
       const { mr, el, cs, dwl } = shown;
       rows.push({
         point, pid: r.pid, P: r.P, priceSet: st.settings[point][r.pid].price, D: r.D, S, lostStock, lostQueue,
@@ -455,6 +464,19 @@ function lavkaSimulate(st) {
   if (plusStreak >= 7) hit("week");
   if (st.day >= 30) hit("day30");
 
+  /* Что мешает ключевой цели главы 1 — только то, что игрок видит сам (без чисел оракула). */
+  let chapterHint = null;
+  if ((st.chapter || 1) === 1 && !goals.mrmc) {
+    const why = [];
+    for (const r of rows) {
+      const nm = `«${LAVKA_PRODUCTS[r.pid].name}»`;
+      if (r.lostStock > 0) why.push(`${nm}: товар кончился`);
+      else if (r.cap != null) why.push(`${nm}: действует потолок`);
+      else if (r.mrTrue == null || Math.abs(r.mrTrue - r.mc - lavkaShownLambda(r.lambda)) > 3) why.push(`${nm}: цена ещё не там, где MR = MC${lavkaShownLambda(r.lambda) > 0 ? " + λ" : ""}`);
+    }
+    if (why.length) chapterHint = `Цель «Чуйка монополиста» (ключ к главе 2) сегодня не засчитана — ${why.join("; ")}.`;
+  }
+
   /* Новая глава: прошла неделя И выполнена ключевая цель текущей главы. */
   let chapter = st.chapter || 1, newChapter = null;
   const upcoming = LAVKA_CHAPTERS[chapter], cur = LAVKA_CHAPTERS[chapter - 1];
@@ -477,7 +499,7 @@ function lavkaSimulate(st) {
   cash += reward;
 
   const report = {
-    day: st.day, rows, revenue, buyCost, taxPaid, fixed, profit, repaid, reward, newGoals, newChapter,
+    day: st.day, rows, revenue, buyCost, taxPaid, fixed, profit, repaid, reward, newGoals, newChapter, chapterHint,
     event: st.event, tokens, sold, repDelta, weekday: lavkaWeekday(st.day),
   };
   const stats = {
@@ -587,9 +609,18 @@ function lavkaLoad(raw) {
 
 /* МНК по обычным дням. Наблюдение: D = k·(α − β·P), k — число покупателей относительно обычного будня
    (день недели × лояльность × вывеска), поэтому D/k = α − β·P — точная линейная зависимость. */
-function lavkaFit(list) {
+function lavkaFit(list) { return lavkaFitStatus(list).fit; }
+
+/* То же с причиной, почему оценки нет: few — меньше 3 обычных дней, flat — цены слишком близки
+   или шум дал неубывающую линию. */
+function lavkaFitStatus(list) {
   const pts = (list || []).filter((o) => o.base);
-  if (pts.length < 3) return null;
+  if (pts.length < 3) return { fit: null, reason: "few" };
+  const f = lavkaFitRaw(pts);
+  return f ? { fit: f, reason: null } : { fit: null, reason: "flat" };
+}
+
+function lavkaFitRaw(pts) {
   const n = pts.length;
   const dn = (o) => o.D / (o.k || 1); // спрос на «одного обычного будничного покупателя»
   const mp = pts.reduce((s, o) => s + o.P, 0) / n, md = pts.reduce((s, o) => s + dn(o), 0) / n;
@@ -609,7 +640,7 @@ export {
   LAVKA_UPGRADES, LAVKA_EVENTS, LAVKA_GOALS, LAVKA_QUIZ,
   lavkaUnlocked, lavkaOpenPoints, lavkaDefaultSettings, lavkaNewState, lavkaParams, lavkaCompBR, lavkaTS,
   lavkaSimulate, lavkaRollEvent, lavkaFit, lavkaFmt, lavkaRub, LAVKA_MONO,
-  lavkaPlan, lavkaVerdict, lavkaLoad, LAVKA_MODEL_VERSION, LAVKA_SIGN_MULT,
+  lavkaPlan, lavkaVerdict, lavkaLoad, lavkaFitStatus, LAVKA_MODEL_VERSION, LAVKA_SIGN_MULT,
   lavkaCeilingParadox, lavkaShownLambda, LAVKA_LAMBDA_SHOWN,
   LAVKA_CHAPTERS, LAVKA_ORACLE_DAYS, lavkaChapterOf, lavkaUpgradeOpen, lavkaChapterByDay,
 };

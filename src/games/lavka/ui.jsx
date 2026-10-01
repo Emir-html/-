@@ -59,7 +59,7 @@ function LavkaEventCard({ st }) {
   const moved = [];
   for (const point of lavkaOpenPoints(st)) for (const pid of pids) {
     const a = lavkaParams(st, point, pid, true), b = lavkaParams(st, point, pid);
-    if (!b.base) moved.push({ point, pid, a, b });
+    if (Math.abs(a.pOpt - b.pOpt) > 0.05 || Math.abs(a.qOpt - b.qOpt) > 0.05) moved.push({ point, pid, a, b });
   }
   return (
     <LavkaCard tint={COLORS.amberSoft}>
@@ -321,6 +321,12 @@ function LavkaReport({ rep, st, onNext }) {
           </p>
         </LavkaCard>
       ); })()}
+
+      {rep.chapterHint && (
+        <LavkaCard>
+          <p className="text-sm" style={{ color: COLORS.ink }}>🧭 {rep.chapterHint}</p>
+        </LavkaCard>
+      )}
 
       {rep.newGoals.length > 0 && (
         <LavkaCard tint={COLORS.amberSoft}>
