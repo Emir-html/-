@@ -138,7 +138,7 @@ const LAVKA_EVENTS = {
   tax: {
     emoji: "🧾", title: "Акциз", days: [2, 3], weight: 2, needsProduct: true,
     text: (ev) => ev.taxes
-      ? `Город ввёл акциз на всё: ${Object.entries(ev.taxes).map(([pid, t]) => `${LAVKA_PRODUCTS[pid].name.toLowerCase()} ${t} ₽`).join(", ")} с каждой проданной единицы. Платит продавец.`
+      ? `Город ввёл акциз на всё (во всех точках): ${Object.entries(ev.taxes).map(([pid, t]) => `${LAVKA_PRODUCTS[pid].name.toLowerCase()} ${t} ₽`).join(", ")} с каждой проданной единицы. Платит продавец.`
       : `Город ввёл акциз: 10 ₽ с каждой проданной единицы товара «${LAVKA_PRODUCTS[ev.product].name}». Платит продавец.`,
     effect: (pid, point, ev) => (ev.taxes ? (ev.taxes[pid] ? { tax: ev.taxes[pid] } : null) : pid === ev.product ? { tax: 10 } : null),
     theory: () => "Для продавца налог — рост MC на t. Монополист с линейным спросом и свободным прилавком (λ = 0) поднимает цену на t/2 (при t = 10 ₽ — на 5 ₽): бремя делится поровну между покупателями и продавцом, хотя юридически платит продавец. Если прилавок полон, перенос меньше половины: часть налога «съедает» теневая цена места. Объём падает — растёт DWL.",
@@ -605,8 +605,9 @@ function lavkaExamDayState(st, exam, i, settings) {
 
 function lavkaExamNew(st, seed) {
   const rng = lavkaRng(seed);
-  const attempts = (st.examBest && st.examBest.attempts) || 0;
-  const exam = { seed, day0: st.day + 3 * attempts, days: [], results: [], settings: JSON.parse(JSON.stringify(st.settings)) };
+  /* Сдвиг рынка — по числу НАЧАТЫХ попыток (включая прерванные), а не засчитанных. */
+  const starts = Math.max(st.examStarts || 0, (st.examBest && st.examBest.attempts) || 0);
+  const exam = { seed, day0: st.day + 3 * starts, days: [], results: [], settings: JSON.parse(JSON.stringify(st.settings)) };
   LAVKA_EXAM_KINDS.forEach((k, i) => {
     let event = null;
     if (k.events.length) {
@@ -623,6 +624,12 @@ function lavkaExamNew(st, seed) {
     exam.days.push({ kind: k.kind, title: k.title, note: k.note || null, event, seed: Math.floor(rng() * 2 ** 31) });
   });
   return exam;
+}
+
+/* Начать экзамен: счётчик начатых попыток растёт сразу — прерывание не возвращает тот же рынок. */
+function lavkaExamStart(st, seed) {
+  const exam = lavkaExamNew(st, seed);
+  return { ...st, examActive: exam, examStarts: Math.max(st.examStarts || 0, (st.examBest && st.examBest.attempts) || 0) + 1 };
 }
 
 /* Бот-оптимизатор: цены — план точки с мощностью (MR = MC + λ), закупка — общий множитель к плановому объёму,
@@ -788,6 +795,6 @@ export {
   lavkaPlan, lavkaVerdict, lavkaLoad, lavkaFitStatus, LAVKA_MODEL_VERSION, LAVKA_SIGN_MULT,
   lavkaCeilingParadox, lavkaShownLambda, LAVKA_LAMBDA_SHOWN,
   lavkaRng, lavkaMakeEvent, LAVKA_EXAM_FROM_DAY, LAVKA_EXAM_KINDS, LAVKA_MEDALS, lavkaExamOpen, lavkaExamMedal,
-  lavkaExamDayState, lavkaExamNew, lavkaExamBotSettings, lavkaExamPlayDay, lavkaExamEfficiency, lavkaExamFinish, lavkaExamResult,
+  lavkaExamDayState, lavkaExamNew, lavkaExamBotSettings, lavkaExamPlayDay, lavkaExamEfficiency, lavkaExamFinish, lavkaExamResult, lavkaExamStart,
   LAVKA_CHAPTERS, LAVKA_ORACLE_DAYS, lavkaChapterOf, lavkaUpgradeOpen, lavkaChapterByDay,
 };

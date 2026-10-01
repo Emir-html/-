@@ -11,7 +11,7 @@ import {
   lavkaVerdict, lavkaLoad, lavkaShownLambda,
   LAVKA_CHAPTERS, LAVKA_ORACLE_DAYS, lavkaChapterOf, lavkaUpgradeOpen,
   LAVKA_MEDALS, LAVKA_EXAM_FROM_DAY, lavkaExamOpen, lavkaExamMedal, lavkaExamDayState, lavkaExamNew, lavkaExamPlayDay,
-  lavkaExamEfficiency, lavkaExamFinish, lavkaExamResult,
+  lavkaExamEfficiency, lavkaExamFinish, lavkaExamResult, lavkaExamStart,
 } from "./model.js";
 function LavkaStepper({ value, onChange, step = 1, min = 0, max = 9999, suffix }) {
   const btn = { background: COLORS.paperDeep, color: COLORS.ink, border: `1px solid ${COLORS.line}` };
@@ -607,7 +607,7 @@ function LavkaExam({ st, update }) {
         Завершить день {i + 1} из {exam.days.length}
       </button>
       <button onClick={() => update((s) => ({ ...s, examActive: null }))} className="w-full py-2.5 rounded-full text-sm mt-2" style={{ border: `1px solid ${COLORS.line}`, color: COLORS.inkSoft }}>
-        Прервать экзамен (попытка не засчитается)
+        Прервать экзамен (попытка не засчитается, следующая будет на другом рынке)
       </button>
     </div>
   );
@@ -751,7 +751,7 @@ function LavkaScreen({ onBack, theme, onToggleTheme }) {
                 <p className="font-semibold">🎓 Экзамен уровня 1 открыт</p>
                 <p className="text-sm mt-1" style={{ color: COLORS.ink }}>4 дня без подсказок на копии лавки: обычный день, сдвиг спроса, политика, мощность. Касса не меняется, пересдавать можно сколько угодно — каждый раз другие дни.</p>
                 {st.examBest && <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Лучший результат: {Math.round(st.examBest.eff * 100)}%{st.examBest.medal ? " " + LAVKA_MEDALS.find((m) => m.id === st.examBest.medal).emoji : ""} · попыток: {st.examBest.attempts}</p>}
-                <button onClick={() => update((s) => ({ ...s, examActive: lavkaExamNew(s, Math.floor(Math.random() * 2 ** 31)) }))} className="mt-3 text-sm px-4 py-2 rounded-full"
+                <button onClick={() => update((s) => lavkaExamStart(s, Math.floor(Math.random() * 2 ** 31)))} className="mt-3 text-sm px-4 py-2 rounded-full"
                   style={{ background: COLORS.onyx, color: COLORS.onyxText, fontWeight: 600 }}>Сдать экзамен</button>
               </LavkaCard>
             )}

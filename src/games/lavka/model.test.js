@@ -494,3 +494,13 @@ test("экзамен: день недели меняется от попытки
   assert.notEqual(d0 % 7, d1 % 7);
   assert.equal(L.lavkaExamEfficiency({ days: [{}], results: [{ player: 100, bot: -5, playerMargin: 100, botMargin: -5 }] }), null);
 });
+
+test("экзамен: прерванная попытка тоже сдвигает рынок (нельзя перебирать через «Прервать»)", () => {
+  const st = examReady();
+  const a = L.lavkaExamStart(st, 1);
+  const aborted = { ...a, examActive: null };
+  const b = L.lavkaExamStart(aborted, 1);
+  assert.equal(b.examStarts, 2);
+  const w = (s) => L.lavkaWeekday(L.lavkaExamDayState(s, s.examActive, 0).day);
+  assert.notEqual(w(a), w(b));
+});
