@@ -12,6 +12,7 @@
 - `src/ui/theme.js` — LIGHT_COLORS, DARK_COLORS, COLORS (изменяемый объект, тему переключает AppRoot), pageBackground, PAGE_BG_SIZE; `src/ui/SessionTimer.jsx` — таймер сессии
 - `docs/` — LAVKA_SPEC.md, ROADMAP.md, GAME_DESIGN.md; `docs/sources/` — выжимки уроков и CONCEPT_MAP.md
 - `data/` — экспорты прогресса Мира (не перезаписывать); `kit/` — исходный комплект как есть (не править)
+- Хук `.claude/hooks/check-after-edit.mjs` сам запускает `npm run check` после правки файлов в `src/`
 - Команды: `npm run dev`, `npm run build`, `npm test`, `npm run balance`
 Общение с Миром — по-русски, коротко. «ок», «да» = одобрение, продолжай.
 

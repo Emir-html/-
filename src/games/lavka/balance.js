@@ -34,8 +34,15 @@ function play(fn) {
 const rows = [];
 for (const [name, fn] of Object.entries(strategies)) {
   let t = 0, c = 0, r = 0;
-  for (let i = 0; i < RUNS; i++) { const o = play(fn); t += o.total; c += o.cash; r += o.rep; }
-  rows.push({ стратегия: name, "прибыль за период": Math.round(t / RUNS), "касса в конце": Math.round(c / RUNS), "лояльность парка": (r / RUNS).toFixed(2) });
+  const first = [], office = []; // день первой покупки улучшения и день открытия второй точки
+  for (let i = 0; i < RUNS; i++) {
+    const o = play(fn); t += o.total; c += o.cash; r += o.rep;
+    const days = Object.values(o.firstBuy); if (days.length) first.push(Math.min(...days));
+    if (o.firstBuy.office) office.push(o.firstBuy.office);
+  }
+  const avg = (a) => (a.length ? (a.reduce((s, x) => s + x, 0) / a.length).toFixed(1) + (a.length < RUNS ? ` (${a.length}/${RUNS})` : "") : "—");
+  rows.push({ стратегия: name, "прибыль за период": Math.round(t / RUNS), "касса в конце": Math.round(c / RUNS), "лояльность парка": (r / RUNS).toFixed(2),
+    "1-я покупка, день": avg(first), "2-я точка, день": avg(office) });
 }
 rows.sort((a, b) => b["прибыль за период"] - a["прибыль за период"]);
 console.log(`Дней: ${DAYS}, прогонов на стратегию: ${RUNS}`);
