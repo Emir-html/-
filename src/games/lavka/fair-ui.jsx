@@ -6,6 +6,7 @@ import { LAVKA_MONO, lavkaRub, lavkaFmt, LAVKA_MEDALS } from "./model.js";
 import {
   FAIR, FAIR_GOALS, FAIR_CHAPTERS, FAIR_UPGRADES, LEVEL1_DIVIDEND,
   fairCartelMath, fairSalePrice, fairSimulate, fairVerdict, fairBuy, fairFit, fairMC, levelFinish, fairRivalsToday,
+  fairExamOpen, fairExamNew, fairExamPlayDay, fairExamResult, fairExamFinish,
 } from "./fair.js";
 import { LavkaStepper, LavkaAwning, LavkaCard } from "./components.jsx";
 
@@ -49,6 +50,68 @@ function LevelFinishCard({ st, update }) {
   );
 }
 
+/* Экзамен уровня 2: 4 дня без подсказок на копии ярмарки. */
+function FairExam({ fair, setFair }) {
+  const exam = fair.examActive;
+  const [q, setQ] = useState(50);
+  const [last, setLast] = useState(null);
+  const i = exam.results.length, done = i >= exam.days.length;
+  const medalOf = (id) => LAVKA_MEDALS.find((m) => m.id === id);
+  const head = (
+    <LavkaCard tint={COLORS.blueSoft}>
+      <p className="font-semibold">🎓 Экзамен уровня 2{done ? " — итог" : ` · день ${i + 1} из ${exam.days.length}`}</p>
+      <p className="text-sm mt-1">Четыре дня без подсказок: Курно на троих, вход дешёвого конкурента, картель, лидерство. Объёмы конкурентов
+        не показываются — известны их число и MC. Оценка — твоя маржа (до аренды) против бота на том же шоке спроса; касса не меняется.</p>
+    </LavkaCard>
+  );
+  if (done) {
+    const res = fairExamResult(exam), medal = res && res.medal;
+    return (
+      <div className="ms-rise">
+        {head}
+        <LavkaCard tint={medal ? COLORS.sageSoft : COLORS.rustSoft}>
+          {res ? (<>
+            <p className="text-3xl" style={{ fontFamily: LAVKA_MONO, fontWeight: 700 }}>{Math.round(res.eff * 100)}%</p>
+            <p className="text-base mt-1 font-semibold">{medal ? `${medal.emoji} ${medal.title}` : "Без медали"}</p>
+            <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Худший день: {Math.round(res.minDay * 100)}%. Медали: 🥉 ≥ 70% и каждый день ≥ 50%, 🥈 ≥ 85% и ≥ 70%, 🥇 ≥ 95% и ≥ 85%.</p>
+          </>) : <p className="font-semibold">Экзамен недействителен — пересдай.</p>}
+          {exam.days.map((d, k) => {
+            const r = exam.results[k];
+            return (
+              <div key={k} className="text-sm py-1.5" style={{ borderTop: `1px solid ${COLORS.line}` }}>
+                <div className="flex justify-between gap-2"><span>{k + 1}. {d.title}</span><span style={{ fontFamily: LAVKA_MONO }}>{res ? Math.round(res.days[k] * 100) + "%" : ""}</span></div>
+                <p className="text-xs" style={{ color: COLORS.inkSoft }}>ты испёк {r.q}, лучший ответ {r.botQ}; конкуренты {Math.round(r.Qr)}, цена {Math.round(r.P)} ₽{r.cheated ? " · обман картеля: наказание засчитано" : ""}</p>
+              </div>
+            );
+          })}
+          {fair.examBest && <p className="text-xs mt-2" style={{ color: COLORS.inkSoft }}>Лучший результат до этой попытки: {Math.round(fair.examBest.eff * 100)}%{fair.examBest.medal ? " " + medalOf(fair.examBest.medal).emoji : ""}, попыток {fair.examBest.attempts}.</p>}
+        </LavkaCard>
+        <button onClick={() => setFair((f) => fairExamFinish(f, f.examActive))} className="w-full py-3.5 rounded-full text-base" style={{ background: COLORS.onyx, color: COLORS.onyxText, fontWeight: 700 }}>Вернуться на ярмарку</button>
+      </div>
+    );
+  }
+  const d = exam.days[i];
+  return (
+    <div>
+      {head}
+      {last && <LavkaCard><p className="text-sm">День {i} закрыт: маржа {lavkaRub(last.playerMargin)}. Разбор — в конце экзамена.</p></LavkaCard>}
+      <LavkaCard tint={COLORS.amberSoft}>
+        <p className="font-semibold">День {i + 1}: {d.title}</p>
+        <p className="text-sm mt-1">{d.text}</p>
+        <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Спрос P = 200 − Q (± шок 5%), твои MC = {fairMC(fair)} ₽.</p>
+      </LavkaCard>
+      <LavkaCard>
+        <p className="font-semibold">Сколько испечь</p>
+        <div className="mt-2"><LavkaStepper value={q} onChange={setQ} min={0} max={200} suffix=" шт." /></div>
+        <input type="range" min={0} max={160} value={Math.min(q, 160)} onChange={(e) => setQ(Number(e.target.value))} className="w-full mt-2" style={{ accentColor: COLORS.sage }} aria-label="Сколько испечь на экзамене" />
+      </LavkaCard>
+      <button onClick={() => { const out = fairExamPlayDay(fair, exam, q); setLast(out.result); setFair((f) => ({ ...f, examActive: out.exam })); window.scrollTo?.(0, 0); }}
+        className="w-full py-3.5 rounded-full text-base" style={{ background: COLORS.onyx, color: COLORS.onyxText, fontWeight: 700 }}>Завершить день {i + 1} из {exam.days.length}</button>
+      <button onClick={() => setFair((f) => ({ ...f, examActive: null }))} className="w-full py-2.5 rounded-full text-sm mt-2" style={{ border: `1px solid ${COLORS.line}`, color: COLORS.inkSoft }}>Прервать экзамен (не засчитается)</button>
+    </div>
+  );
+}
+
 function FairScreen({ st, update }) {
   const fair = st.fair;
   const [tab, setTab] = useState("fair");
@@ -75,6 +138,12 @@ function FairScreen({ st, update }) {
     window.scrollTo?.(0, 0);
   };
   const tabs = [["fair", "Ярмарка"], ["upgrades", "Улучшения"], ["goals", "Цели"]];
+  if (fair.examActive) return (
+    <div>
+      <LavkaAwning title="Ярмарка" sub={`Уровень 2 · экзамен · на счёте ${lavkaRub(fair.cash)}`} />
+      <FairExam fair={fair} setFair={setFair} />
+    </div>
+  );
   const Line = ({ l, v, strong }) => (
     <div className="flex justify-between text-sm py-0.5"><span>{l}</span><span style={{ fontFamily: LAVKA_MONO, fontWeight: strong ? 700 : 400 }}>{v}</span></div>
   );
@@ -110,6 +179,15 @@ function FairScreen({ st, update }) {
             </LavkaCard>
           )}
 
+          {fairExamOpen(fair) && (
+            <LavkaCard tint={COLORS.blueSoft}>
+              <p className="font-semibold">🎓 Экзамен уровня 2 открыт</p>
+              <p className="text-sm mt-1">4 дня без подсказок: Курно на троих, вход дешёвого конкурента, картель, лидерство. MC конкурентов каждый раз новые — равновесие придётся считать. Касса не меняется, пересдавать можно.</p>
+              {fair.examBest && <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Лучший результат: {Math.round(fair.examBest.eff * 100)}%{fair.examBest.medal ? " " + LAVKA_MEDALS.find((m) => m.id === fair.examBest.medal).emoji : ""} · попыток {fair.examBest.attempts}</p>}
+              <button onClick={() => setFair((f) => ({ ...f, examActive: fairExamNew(f, Math.floor(Math.random() * 2 ** 31)) }))} className="mt-3 text-sm px-4 py-2 rounded-full" style={{ background: COLORS.onyx, color: COLORS.onyxText, fontWeight: 600 }}>Сдать экзамен</button>
+            </LavkaCard>
+          )}
+
           {fair.day === 1 && !rep && (
             <LavkaCard tint={COLORS.sageSoft}>
               <p className="text-sm leading-relaxed">
@@ -127,7 +205,7 @@ function FairScreen({ st, update }) {
             ))}
             <p className="text-xs mt-2" style={{ color: COLORS.inkSoft }}>
               {fair.leader ? "У тебя утренний прилавок: конкуренты видят твой сегодняшний объём и отвечают на него."
-                : inCartel ? `Картель: каждый печёт по ${cm.qCartel}.`
+                : inCartel ? `Картель: ты печёшь ${Math.round(cm.qPlayer)}, Семён — ${Math.round(cm.qRival)}.`
                   : fair.cartel && fair.cartel.punish > 0 ? `Семён наказывает за обман: ещё ${fair.cartel.punish} дн. печёт по Курно.`
                     : "Опытные торговцы печь будут как в равновесии Курно — каждый ждёт от остальных рационального ответа. (Наивно «отвечать на вчерашний объём» при трёх и более продавцах не сходится — цены бы качались.)"}
             </p>

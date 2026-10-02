@@ -15,6 +15,12 @@ const strategies = {
     if (st.leader) return { ...st, q: Math.round(F.fairStackelberg(st.rivals.length, c).qL) };
     return { ...st, q: Math.round(F.fairBR(today(st), c)) };
   },
+  "мука + верность картелю, без прилавка": (st) => {
+    st = F.fairBuy(st, "flour");
+    const c = F.fairMC(st);
+    if (st.cartel && st.cartel.active && st.cartel.punish === 0) return { ...st, q: Math.round(F.fairCartelMath(c).qPlayer) };
+    return { ...st, q: Math.round(F.fairBR(today(st), c)) };
+  },
   "наилучший ответ без вложений": (st) => {
     if (st.cartel && st.cartel.active && st.cartel.punish === 0) return { ...st, q: Math.round(F.fairCartelMath().qCartel) };
     return { ...st, q: Math.round(F.fairBR(today(st))) };

@@ -202,3 +202,37 @@ test("утренний прилавок окупается за 10–20 дней
   const payback = u.cost / gain;
   assert.ok(payback >= 10 && payback <= 20, `окупаемость ${payback.toFixed(1)}`);
 });
+
+/* ===== Экзамен уровня 2 ===== */
+
+const examFair = () => { const f = F.fairNewState(50000); f.day = 22; f.chapter = 3; return f; };
+
+test("Нэш с разными MC: qᵢ = (A − n·cᵢ + Σcⱼ)/((n + 1)B); при равных MC — симметричный Курно", () => {
+  const q = F.fairNashCosts([40, 40, 40]);
+  for (const x of q) near(x, F.fairCournot(3).q);
+  const a = F.fairNashCosts([40, 40, 30]);
+  near(a[2], (200 - 3 * 30 + 80) / 4); near(a[0], (200 - 3 * 40 + 70) / 4);
+  assert.ok(a[2] > a[0]);
+});
+
+test("экзамен уровня 2: открыт в главе 3 с 22-го дня; 4 сценария, детерминированы сидом", () => {
+  const f = examFair();
+  assert.equal(F.fairExamOpen(f), true);
+  assert.equal(F.fairExamOpen({ ...f, day: 21 }), false);
+  const e = F.fairExamNew(f, 9);
+  assert.deepEqual(e.days.map((d) => d.kind), ["cournot3", "entry", "cartel", "leader"]);
+  assert.deepEqual(e.days, F.fairExamNew(f, 9).days);
+});
+
+test("экзамен уровня 2: бот = 100%; обман картеля и «как в дуополии» — провал своего дня; касса не меняется", () => {
+  const f = examFair();
+  const play = (pick) => { let ex = F.fairExamNew(f, 4); for (let i = 0; i < 4; i++) ex = F.fairExamPlayDay(f, ex, pick(ex.days[i], i)).exam; return ex; };
+  const best = play((d) => F.fairExamBotQ(f, d));
+  near(F.fairExamResult(best).eff, 1, 1e-9);
+  const cheat = play((d) => (d.kind === "cartel" ? Math.round(F.fairBR(F.fairCartelMath(F.fairMC(f)).qRival)) : F.fairExamBotQ(f, d)));
+  assert.ok(F.fairExamResult(cheat).days[2] < 0.7, `обман: ${F.fairExamResult(cheat).days[2]}`);
+  const duo = play(() => 53);
+  assert.ok(!F.fairExamResult(duo).medal || F.fairExamResult(duo).medal.id === "bronze", "«всегда 53» — не выше бронзы");
+  const after = F.fairExamFinish(f, best);
+  assert.equal(after.cash, f.cash); assert.equal(after.examBest.medal, "gold");
+});
