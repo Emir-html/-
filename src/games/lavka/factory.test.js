@@ -1,139 +1,124 @@
-/* Тесты уровня 4 «Своё производство»: node --test factory.test.js
-   Найм (MRP = w), монопсония (MRP = MRC > w), МРОТ повышает занятость, аренда против покупки печи через NPV. */
+/* Тесты уровня 4 «Своё производство» (цех «Заря», сценарий «Путь компании»): node --test factory.test.js
+   Убывающая отдача, монопсония (MRC > w), договор и МРОТ как нижняя граница зарплаты, пик цены, котёл по PV на срок службы. */
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as P from "./factory.js";
 import * as C from "./chain.js";
-import * as L from "./model.js";
+import * as K from "./capital.js";
 
 const near = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) <= eps, `${a} ≉ ${b}`);
-const { price, a, b } = P.FACTORY;
+const pi = (L, o) => P.factoryLaborMargin(L, o) - P.FACTORY.shopRent - P.FACTORY.boiler.rent;
 
-test("производство: f(L) = aL − bL², MPL = a − 2bL, MRP = P·MPL", () => {
-  near(P.factoryQ(10), a * 10 - b * 100);
-  near(P.factoryMPL(10), a - 2 * b * 10);
-  near(P.factoryMRP(10, price), price * (a - 2 * b * 10));
+test("производство: Q(L) = 14L − 0,25L², MP = 14 − 0,5L; таблица найма сценария (p = 300, аренда котла)", () => {
+  near(P.factoryQ(14), 147); near(P.factoryQ(16), 160); near(P.factoryMP(14), 7);
+  near(pi(12, { p: 300 }), 14200); near(pi(14, { p: 300 }), 14900); near(pi(15, { p: 300 }), 14875); near(pi(18, { p: 300 }), 13300);
 });
 
-test("конкурентный рынок труда: MRP = w → L* = (a − w/P)/(2b)", () => {
-  near(P.factoryLabor({ market: "competitive", w: 2000 }).L, (a - 2000 / price) / (2 * b));
-  near(P.factoryLabor({ market: "competitive", w: 2000 }).L, 20);
+test("монопсония: целочисленный оптимум 14 по 1 300; дискретно MRP(15) = 2 025 < MRC(15) = 2 050; конкурентный ориентир 18 по 1 500", () => {
+  assert.equal(P.factoryBestL({ p: 300 }), 14); near(P.factoryWage(14), 1300);
+  const s15 = P.factoryStep(15, { p: 300 }), s14 = P.factoryStep(14, { p: 300 });
+  near(s15.mrp, 2025); near(s15.mrc, 2050); near(s14.mrp, 2175); near(s14.mrc, 1950);
+  const comp = P.factoryCompetitive(); near(comp.L, 18); near(comp.w, 1500);
 });
 
-test("монопсония: MRC = c + 2dL > w, оптимум MRP = MRC; зарплата и занятость ниже конкурентных", () => {
-  const m = P.factoryLabor({ market: "monopsony" });
-  near(m.L, 14); near(m.w, 1550);
-  const L0 = 14;
-  assert.ok(P.factoryMRC(L0) > P.factorySupplyW(L0));
-  const comp = P.factoryCompetitiveEq();
-  near(comp.L, 20); near(comp.w, 2000);
-  assert.ok(m.L < comp.L && m.w < comp.w);
+test("граница 1 400 (договор или МРОТ): MRC плоская до 16 — занятость растёт 14 → 16, прибыль 14 600 (с 14 — 13 500)", () => {
+  assert.equal(P.factoryBestL({ p: 300, floor: 1400 }), 16);
+  near(pi(16, { p: 300, floor: 1400 }), 14600); near(pi(14, { p: 300, floor: 1400 }), 13500);
+  /* МРОТ выше MRP при монопсоническом найме — занятость ниже 14 (1 600 → 17; 2 300 → 13 по дискретному MRP, в сценарии 12 — по непрерывному). */
+  assert.equal(P.factoryBestL({ p: 300, floor: 1600 }), 17); assert.equal(P.factoryBestL({ p: 300, floor: 2300 }), 13); // дискретно: p·ΔQ(13) = 2 325 ≥ 2 300 > p·ΔQ(14) = 2 175
 });
 
-test("МРОТ между монопсонической и конкурентной зарплатой повышает занятость (зеркало потолка цены)", () => {
-  const mono = P.factoryLabor({ market: "monopsony" });
-  const mw = P.factoryLabor({ market: "monopsony", wMin: 1800 });
-  near(mw.w, 1800);
-  near(mw.L, (1800 - P.FACTORY.supplyC) / P.FACTORY.supplyD); // упор в предложение труда
-  assert.ok(mw.L > mono.L);
-  near(P.factoryLabor({ market: "monopsony", wMin: 2000 }).L, P.factoryCompetitiveEq().L, 1e-9); // максимум — при МРОТ = конкурентной
-  near(P.factoryLabor({ market: "monopsony", wMin: 2600 }).L, 14, 1e-9); // МРОТ = MRP(L_m): занятость как без МРОТ
-  assert.ok(P.factoryLabor({ market: "monopsony", wMin: 3000 }).L < 14, "МРОТ выше MRP(L_m) — занятость ниже монопсонической");
+test("пик p = 380: оптимум 16 (27 400), 17-й требует 1 450 всем (27 335)", () => {
+  assert.equal(P.factoryBestL({ p: 380, floor: 1400 }), 16);
+  near(pi(16, { p: 380, floor: 1400 }), 27400); near(pi(17, { p: 380, floor: 1400 }), 27335);
 });
 
-test("печь: аренда против покупки по NPV при ставке r", () => {
-  const o = P.factoryOvenMath();
-  const r = P.FACTORY.rate, N = P.FACTORY.ovenDays;
-  near(o.pvRent, P.FACTORY.ovenRent * (1 - (1 + r) ** -N) / r);
-  near(o.pvBuy, P.FACTORY.ovenPrice - P.FACTORY.ovenSalvage / (1 + r) ** N);
-  assert.equal(o.buyBetter, o.pvBuy < o.pvRent);
-  assert.ok(o.buyBetter, "при этих числах купить дешевле");
+test("котёл: PV на 48 дней службы — при 2% купить дешевле на 4 164, при 3% аренда дешевле на 56 620; б/у стоит PV сбережений", () => {
+  const b2 = P.factoryBoilerMath(0.02), b3 = P.factoryBoilerMath(0.03);
+  near(b2.pvRent, 245385, 1); near(b2.pvBuy, 241221, 1); assert.ok(b2.buyBetter);
+  near(b3.pvRent, 202134, 1); near(b3.pvBuy, 258754, 1); assert.ok(!b3.buyBetter);
+  /* Цена нового котла на рынке б/у (V(48)) − цена покупки = выигрыш от покупки: решение не зависит от дня покупки. */
+  near(P.factoryBoilerValue(48) - P.FACTORY.boiler.price, b2.saving, 1e-6);
 });
 
-test("день пекарни: выручка P·f(L), зарплата по рынку или предложению, печь — аренда или куплена", () => {
-  let st = P.factoryNewState(1e5); st.L = 20;
-  const { next, report } = P.factorySimulate(st, L.lavkaRng(1));
-  near(report.wage, 2000);
-  near(report.profit, report.P * P.factoryQ(20) - 2000 * 20 - P.FACTORY.ovenRent);
-  assert.equal(next.day, 2);
-  st = P.factoryBuyOven({ ...P.factoryNewState(1e5) });
-  assert.ok(st.ovenOwned); assert.equal(st.cash, 1e5 - P.FACTORY.ovenPrice);
-  const r2 = P.factorySimulate({ ...st, L: 20 }, L.lavkaRng(1)).report;
-  near(r2.oven, 0);
+test("день цеха: прибыль = p·Q − w·L − цех − котёл; граница с Д10 при договоре и с Д16 всегда; пик с Д19", () => {
+  const st = { ...P.factoryNewState(1e5), L: 14 };
+  const { next, report } = P.factorySimulate(st);
+  near(report.profit, 14900); assert.equal(next.day, 2);
+  assert.equal(P.factoryFloor({ ...st, day: 10, contract: true }), 1400); assert.equal(P.factoryFloor({ ...st, day: 12 }), 0);
+  assert.equal(P.factoryFloor({ ...st, day: 16 }), 1400); assert.equal(P.factoryPrice(19), 380);
+  const owned = P.factoryBuyBoiler({ ...st, day: 8 });
+  assert.equal(owned.cash, 1e5 - 280000); near(P.factorySimulate(owned).report.boilerCost, 500);
 });
 
-test("главы по дням: монопсония с 8-го, МРОТ с 15-го; цели — правильная занятость", () => {
-  let st = P.factoryNewState(1e5); st.day = 7; st.L = 20;
-  const out = P.factorySimulate(st, L.lavkaRng(2));
-  assert.ok(out.report.newGoals.includes("mrp")); assert.equal(out.next.chapter, 2);
-  st = { ...out.next, L: 14 };
-  const r2 = P.factorySimulate(st, L.lavkaRng(3)).report;
-  near(r2.wage, 1550); assert.ok(r2.newGoals.includes("monopsony"));
-  st = { ...P.factoryNewState(1e5), day: 15, chapter: 3, L: 17 };
-  const r3 = P.factorySimulate(st, L.lavkaRng(4)).report;
-  near(r3.wage, 1800); assert.ok(r3.newGoals.includes("minwage"));
+test("котёл продаётся в последний день уровня по рыночной цене б/у", () => {
+  const st = { ...P.factoryNewState(1e5), day: 21, chapter: 3, L: 16, boiler: { day: 8, good: true } };
+  const out = P.factorySimulate(st);
+  near(out.report.resale, Math.round(P.factoryBoilerValue(48 - 14)));
+  assert.ok(out.next.boiler.sold);
 });
 
-test("переход с уровня 3: только с медалью экзамена сети; дочки копятся", () => {
-  const c = C.chainNewState(1e5);
-  const st = { level: 3, chain: c };
-  assert.equal(P.levelFinish3(st, "sell"), null);
-  st.chain = { ...c, examBest: { eff: 0.9, medal: "silver", attempts: 1 }, subsidiaries: [{ name: "Ярмарка", dividend: 2200, daysLeft: 10 }] };
-  const kept = P.levelFinish3(st, "keep");
-  assert.equal(kept.level, 4); assert.equal(kept.factory.subsidiaries.length, 2);
-  assert.equal(kept.factory.subsidiaries[1].dividend, P.LEVEL3_DIVIDEND.silver);
-  const sold = P.levelFinish3(st, "sell");
-  assert.equal(sold.factory.cash, P.FACTORY.grant + Math.round(P.factorySalePrice3("silver")));
+test("цели: монопсония до границы, МРОТ (16), пик (16), котёл при 2%", () => {
+  assert.ok(P.factorySimulate({ ...P.factoryNewState(), L: 14 }).report.newGoals.includes("monopsony"));
+  assert.ok(!P.factorySimulate({ ...P.factoryNewState(), L: 15 }).report.newGoals.includes("monopsony"));
+  assert.ok(P.factorySimulate({ ...P.factoryNewState(), day: 16, chapter: 3, L: 16 }).report.newGoals.includes("minwage"));
+  assert.ok(P.factorySimulate({ ...P.factoryNewState(), day: 19, chapter: 3, L: 16 }).report.newGoals.includes("peak"));
+  assert.ok(P.factorySimulate(P.factoryBuyBoiler({ ...P.factoryNewState(), day: 8 })).report.newGoals.includes("boiler"));
 });
 
-/* ===== Экзамен уровня 4 ===== */
+test("договор Нины на 10-й и письмо на 13-й: предложения и ответы", () => {
+  let st = { ...P.factoryNewState(1e5), day: 9, L: 14 };
+  st = P.factorySimulate(st).next; assert.equal(st.offer, "contract");
+  st = P.factoryAnswer(st, "contract", true); assert.equal(st.contract, true); assert.equal(P.factoryFloor(st), 1400);
+  st = { ...st, day: 12 }; st = P.factorySimulate(st).next; assert.equal(st.offer, "letter");
+  const signed = P.factoryAnswer(st, "letter", true); assert.equal(signed.cash, st.cash - 15000); assert.ok(signed.flags.foughtMinWage);
+});
 
-test("экзамен уровня 4: 4 задачи со случайными параметрами; оптимум 100%; «всегда 20, всегда арендую» — без серебра", () => {
-  const f = { ...P.factoryNewState(1e5), day: 22, chapter: 3 };
+test("вердикт: при L = 0 — без фразы про 0-го работника; при 14 — «сходится»", () => {
+  const v0 = P.factoryVerdict(P.factorySimulate({ ...P.factoryNewState(), L: 0 }).report);
+  assert.ok(!/0-й работник/.test(v0));
+  assert.match(P.factoryVerdict(P.factorySimulate({ ...P.factoryNewState(), L: 14 }).report), /Сходится/);
+});
+
+/* ===== Экзамен ===== */
+test("экзамен: 3 сценария, детерминирован; эталон 100%; МРОТ иногда выше MRP(L_m); котёл зависит от ставки", () => {
+  const f = { ...P.factoryNewState(), day: 22, chapter: 3 };
   assert.equal(P.factoryExamOpen(f), true);
   const e = P.factoryExamNew(f, 11);
-  assert.deepEqual(e.days.map((d) => d.kind), ["competitive", "monopsony", "minwage", "oven"]);
+  assert.deepEqual(e.days.map((d) => d.kind), ["monopsony", "minwage", "boiler"]);
   assert.deepEqual(e.days, P.factoryExamNew(f, 11).days);
-  const run = (pick, seed) => { let ex = P.factoryExamNew(f, seed); for (let i = 0; i < 4; i++) ex = P.factoryExamPlayDay(f, ex, pick(ex.days[i])).exam; return P.factoryExamResult(ex); };
-  const best = run((d) => P.factoryExamBest(d), 11);
-  near(best.eff, 1, 1e-9); assert.equal(best.medal.id, "gold");
-  let silver = 0, highWage = 0;
-  for (let s = 0; s < 40; s++) {
-    const ex = P.factoryExamNew(f, 200 + s);
-    if (ex.days[2].wMin > P.factoryExamCompW(ex.days[2])) highWage++;
-    const r = run(() => ({ L: 20, buy: false }), 200 + s);
-    if (r.medal && r.medal.id !== "bronze") silver++;
+  let ex = e;
+  for (const d of e.days) ex = P.factoryExamPlayDay(f, ex, P.factoryExamBest(d)).exam;
+  near(P.factoryExamResult(ex).eff, 1);
+  let below = 0, buy = 0, rent = 0;
+  for (let s = 0; s < 60; s++) {
+    const ds = P.factoryExamNew(f, 100 + s).days;
+    if (P.factoryExamBest(ds[1]).L < P.factoryExamBest({ ...ds[1], kind: "monopsony", floor: 0 }).L) below++;
+    if (P.factoryExamBest(ds[2]).buy) buy++; else rent++;
   }
-  assert.ok(silver === 0, `серебро в ${silver} из 40`);
-  assert.ok(highWage > 0, "иногда МРОТ выше конкурентной зарплаты — занятость падает");
-  const after = P.factoryExamFinish(f, { ...e, results: [] });
-  assert.equal(after.cash, f.cash);
+  assert.ok(below > 0, "иногда МРОТ выше MRP при монопсоническом найме"); assert.ok(buy > 0 && rent > 0);
 });
 
-/* ===== Ревью экономиста (70%) ===== */
-
-test("целочисленный оптимум найма по прибыли: 20 / 14 / 17", () => {
-  near(P.factoryBestL({ ...P.factoryNewState(), chapter: 1 }), 20);
-  near(P.factoryBestL({ ...P.factoryNewState(), chapter: 2 }), 14);
-  near(P.factoryBestL({ ...P.factoryNewState(), chapter: 3 }), 17);
+test("экзамен: «всегда 14, аренда» и «всегда 18 (MRP = w), аренда» — серебро не чаще 5%", () => {
+  const f = { ...P.factoryNewState(), day: 22, chapter: 3 };
+  for (const L of [14, 18]) {
+    let silver = 0;
+    for (let s = 0; s < 60; s++) {
+      let ex = P.factoryExamNew(f, 300 + s);
+      for (const d of ex.days) ex = P.factoryExamPlayDay(f, ex, { L, buy: false }).exam;
+      const r = P.factoryExamResult(ex);
+      if (r.medal && r.medal.id !== "bronze") silver++;
+    }
+    assert.ok(silver <= 3, `«всегда ${L}»: серебро в ${silver} из 60`);
+  }
 });
 
-test("вердикт главы 3 на углу МРОТ не зовёт нанимать: следующий работник поднимает зарплату всем", () => {
-  const st = { ...P.factoryNewState(1e5), day: 15, chapter: 3, L: 17 };
-  const v = P.factoryVerdict(P.factorySimulate(st, L.lavkaRng(1)).report);
-  assert.ok(!/нанимать ещё выгодно/.test(v), v);
-  assert.match(v, /следующ/);
-  const low = P.factoryVerdict(P.factorySimulate({ ...st, L: 10 }, L.lavkaRng(1)).report);
-  assert.ok(!/найм вырос/.test(low), "при 10 работниках не утверждаем, что найм вырос");
-});
-
-test("печь: NPV на оставшийся горизонт; цель — только если покупка выгодна в момент покупки; на 60-й день печь продаётся", () => {
-  assert.ok(P.factoryOvenMath(1).buyBetter); assert.ok(!P.factoryOvenMath(50).buyBetter, "на 50-й день аренда дешевле");
-  let late = P.factoryBuyOven({ ...P.factoryNewState(2e5), day: 50 });
-  assert.ok(!P.factorySimulate({ ...late, L: 20 }, L.lavkaRng(1)).report.newGoals.includes("oven"));
-  let st = P.factoryBuyOven({ ...P.factoryNewState(2e5), day: 1 });
-  assert.ok(P.factorySimulate({ ...st, L: 20 }, L.lavkaRng(1)).report.newGoals.includes("oven"));
-  st = { ...st, day: P.FACTORY.ovenDays, L: 20 };
-  const out = P.factorySimulate(st, L.lavkaRng(2));
-  assert.equal(out.report.salvage, P.FACTORY.ovenSalvage); assert.equal(out.next.ovenOwned, false);
+test("переход с уровня 3 через capital.js; дочки копятся", () => {
+  const c = C.chainNewState(1e5);
+  assert.equal(P.levelFinish3({ level: 3, chain: c }, "sell"), null);
+  const chain = { ...c, examBest: { eff: 0.9, medal: "silver", piBot: 3000, attempts: 1 }, subsidiaries: [{ name: "Ярмарка", dividend: 1500, daysLeft: 40 }] };
+  const kept = P.levelFinish3({ level: 3, chain }, "keep");
+  assert.equal(kept.level, 4); assert.equal(kept.factory.subsidiaries.length, 2); assert.equal(kept.factory.subsidiaries[1].daysLeft, 48);
+  const sold = P.levelFinish3({ level: 3, chain }, "sell");
+  assert.equal(sold.factory.cash, K.CAPITAL.grant[4] + Math.round(K.capitalSalePrice(3, "silver")));
 });

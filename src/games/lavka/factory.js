@@ -1,226 +1,238 @@
-/* «Своё производство» — уровень 4 «Пути компании» (чистая логика, без React).
-   Новый рычаг — НАЙМ. Пекарня продаёт пирожки на конкурентном оптовом рынке по цене P (шок ±5%),
-   выпуск f(L) = a·L − b·L², предельный продукт MPL = a − 2bL, предельный продукт в деньгах MRP = P·MPL.
-   Главы (по дням):
-     1. Рынок труда — зарплата w задана рынком: нанимай, пока MRP ≥ w (MRP = w).
-     2. Монопсония — пекарня единственный работодатель: предложение труда w(L) = c + d·L, чтобы нанять ещё одного,
-        приходится поднять зарплату всем — MRC = c + 2dL > w. Оптимум MRP = MRC: занятость и зарплата ниже конкурентных.
-     3. МРОТ — делает MRC плоской до L_s(МРОТ): занятость растёт, если МРОТ между монопсонической зарплатой w_m и
-        MRP(L_m); максимум — при МРОТ, равном конкурентной зарплате w_c (той, что была бы, если бы зарплата не зависела
-        от найма пекарни); при МРОТ выше MRP(L_m) занятость ниже монопсонической (зеркало потолка цены у монополиста).
-   Печь: аренда ovenRent в день или покупка за ovenPrice; горизонт уровня — ovenDays дней, в последний день печь
-   продаётся за ovenSalvage. Сравнение по NPV на ОСТАВШИЙСЯ горизонт. Ставка r = 0,5%/день — игровая (≈ 500% годовых). */
+/* «Своё производство» — уровень 4 «Пути компании»: цех варенья на заводе «Заря» (чистая логика, без React).
+   Сценарий: docs/scenario/07_УРОВЕНЬ_4_ПРОИЗВОДСТВО.md, ПАРАМЕТРЫ.md; ревью: docs/reviews/2026-10-02-scenario.md.
+
+   Новый рычаг — НАЙМ (целое L) и ОБОРУДОВАНИЕ (котёл: аренда или покупка).
+   Продукт продаётся областной сети по рыночной цене (цех — ценополучатель): чистая цена p = 520 − 220 = 300 ₽ за набор,
+   на Д19–21 — 380 (предновогодний пик). Выпуск Q(L) = 14L − 0,25L², MP_L = 14 − 0,5L.
+   Цех — единственный работодатель в Заречье: предложение труда w(L) = 600 + 50L (чтобы нанять L-го, платишь w(L) всем),
+   MRC = 600 + 100L. Монопсония: L = 14, w = 1 300 (MRP 2 100 > w). Конкурентный ориентир: L = 18, w = 1 500.
+   Нижняя граница зарплаты: коллективный договор Нины (с Д10, если принят) или региональный МРОТ 1 400 (с Д16) —
+   до L_s = 16 MRC плоская (= 1 400): занятость растёт с 14 до 16.
+   Все решения о найме — по дискретным приростам: что даёт L-й работник (p·ΔQ) против роста расходов на всех.
+   Котёл: аренда 8 000 ₽/день или покупка 280 000 (обслуживание 500 ₽/день, срок службы 48 дней, потом продаётся
+   за 140 000). Б/у котёл на рынке стоит столько, сколько он сбережёт следующему владельцу: V = (8 000 − 500)·a(r, n) +
+   140 000/(1 + r)ⁿ, n — оставшийся срок. Поэтому решение о покупке — по PV на весь срок службы (48 дней), а в конце
+   уровня котёл продаётся по V. При r = 2% купить дешевле на 4 164 ₽, при 3% — аренда дешевле на 56 620. */
 import { lavkaRng, lavkaExamMedal } from "./model.js";
+import { CAPITAL, annuity, capitalPayDividends, capitalInterest, capitalTransition } from "./capital.js";
 
 const FACTORY = {
-  price: 100, noise: 0.05, a: 40, b: 0.5,
-  wMarket: 2000, supplyC: 500, supplyD: 75, wMin: 1800,
-  ovenRent: 2000, ovenPrice: 80000, ovenSalvage: 20000, ovenDays: 60,
-  rate: 0.005, dividendDays: 60, grant: 20000,
-};
-/* Дивиденд сети кофеен по медали экзамена уровня 3 (₽/день). */
-const LEVEL3_DIVIDEND = { gold: 5000, silver: 3600, bronze: 2300 };
-const factorySalePrice3 = (medal) => {
-  const D = LEVEL3_DIVIDEND[medal] || 0, r = FACTORY.rate, N = FACTORY.dividendDays;
-  return (D * (1 - (1 + r) ** -N)) / r;
+  p: 300, pPeak: 380, peakFrom: 19, a: 14, b: 0.25,
+  supplyC: 600, supplyD: 50, floor: 1400, contractDay: 10, letterDay: 13, letterCost: 15000, minWageDay: 16,
+  shopRent: 3000,
+  boiler: { rent: 8000, price: 280000, maint: 500, life: 48, salvage: 140000 },
+  startL: 12, oracleDays: 7, examFromDay: 22, levelDays: 21,
 };
 
-const factoryQ = (L) => Math.max(0, FACTORY.a * L - FACTORY.b * L * L);
-const factoryMPL = (L) => FACTORY.a - 2 * FACTORY.b * L;
-const factoryMRP = (L, P = FACTORY.price) => P * factoryMPL(L);
-const factorySupplyW = (L) => FACTORY.supplyC + FACTORY.supplyD * L;
-const factoryMRC = (L) => FACTORY.supplyC + 2 * FACTORY.supplyD * L;
-
-/* Конкурентное равновесие на местном рынке труда (если бы пекарня брала зарплату как данность): MRP = w(L). */
-function factoryCompetitiveEq() {
-  const { price: P, a, b, supplyC: c, supplyD: d } = FACTORY;
-  const L = (P * a - c) / (2 * b * P + d);
-  return { L, w: c + d * L };
-}
-
-/* Оптимальный найм. market: "competitive" (зарплата w), "monopsony" (предложение c + dL, возможен МРОТ wMin). */
-function factoryLabor({ market, w = FACTORY.wMarket, wMin = null, P = FACTORY.price }) {
-  const { a, b, supplyC: c, supplyD: d } = FACTORY;
-  if (market === "competitive") { const L = Math.max(0, (a - w / P) / (2 * b)); return { L, w }; }
-  const Lm = Math.max(0, (P * a - c) / (2 * b * P + 2 * d)), wm = c + d * Lm;
-  if (wMin == null || wMin <= wm) return { L: Lm, w: wm };
-  /* МРОТ: до L_s = (МРОТ − c)/d каждый работник стоит ровно МРОТ (MRC плоская), дальше — по предложению. */
-  const Ls = (wMin - c) / d, Ld = Math.max(0, (a - wMin / P) / (2 * b));
-  return { L: Math.min(Ls, Ld), w: wMin, Ls, Ld };
-}
-
-/* Аренда печи против покупки в день day: PV аренды на оставшийся горизонт против цены минус PV остаточной стоимости. */
-function factoryOvenMath(day = 1) {
-  const { ovenRent, ovenPrice, ovenSalvage, rate: r } = FACTORY;
-  const N = FACTORY.ovenDays - (day - 1);
-  if (N <= 0) return { N: 0, pvRent: 0, pvBuy: ovenPrice, buyBetter: false, saving: -ovenPrice };
-  const pvRent = (ovenRent * (1 - (1 + r) ** -N)) / r, pvBuy = ovenPrice - ovenSalvage / (1 + r) ** N;
-  return { N, pvRent, pvBuy, buyBetter: pvBuy < pvRent, saving: pvRent - pvBuy };
-}
-
-const FACTORY_GOALS = [
-  { id: "mrp", emoji: "👷", title: "MRP = w", desc: "На конкурентном рынке труда найми столько, сколько выгодно (±1).", reward: 4000 },
-  { id: "monopsony", emoji: "🏭", title: "Монопсония", desc: "Единственный работодатель: найм по MRP = MRC (±1).", reward: 4000 },
-  { id: "minwage", emoji: "📈", title: "МРОТ", desc: "При МРОТ найми столько, сколько готовы работать по МРОТ (±1) — занятость выросла.", reward: 4000 },
-  { id: "oven", emoji: "🔥", title: "Своя печь", desc: "Купи печь, если по NPV это дешевле аренды.", reward: 3000 },
-];
-const FACTORY_CHAPTERS = [
-  { n: 1, title: "Рынок труда", fromDay: 1 },
-  { n: 2, title: "Монопсония", fromDay: 8 },
-  { n: 3, title: "МРОТ", fromDay: 15 },
-];
-
-function factoryNewState(cash = FACTORY.grant) {
-  return { v: 1, level: 4, day: 1, chapter: 1, cash: Math.round(cash), L: 15, ovenOwned: false, goals: {}, history: [], subsidiaries: [], last: null };
-}
-function factoryBuyOven(st) {
-  if (st.ovenOwned || st.cash < FACTORY.ovenPrice || st.day >= FACTORY.ovenDays) return st;
-  return { ...st, ovenOwned: true, ovenGood: factoryOvenMath(st.day).buyBetter, ovenBoughtDay: st.day, cash: st.cash - FACTORY.ovenPrice };
-}
-
-/* Оптимум и зарплата в текущей главе. */
-const factoryMarket = (st) => (st.chapter === 1 ? { market: "competitive" } : st.chapter === 2 ? { market: "monopsony" } : { market: "monopsony", wMin: FACTORY.wMin });
-/* Зарплата при найме L: на рынке — рыночная; при монопсонии — по предложению, но не ниже МРОТ. */
-function factoryWage(st, L) {
-  if (st.chapter === 1) return FACTORY.wMarket;
-  const ws = factorySupplyW(L);
-  return st.chapter === 3 ? Math.max(FACTORY.wMin, ws) : ws;
-}
-/* Расходы на труд и целочисленный оптимум найма по ожидаемой прибыли. */
-const factoryCost = (st, L) => factoryWage(st, L) * L;
-function factoryBestL(st) {
-  let best = 0, bestP = -Infinity;
-  for (let L = 0; L <= 40; L++) { const p = FACTORY.price * factoryQ(L) - factoryCost(st, L); if (p > bestP + 1e-9) { bestP = p; best = L; } }
+const factoryQ = (L, a = FACTORY.a, b = FACTORY.b) => Math.max(0, a * L - b * L * L);
+const factoryMP = (L) => FACTORY.a - 2 * FACTORY.b * L;
+const factoryPrice = (day) => (day >= FACTORY.peakFrom ? FACTORY.pPeak : FACTORY.p);
+const factorySupplyW = (L, c = FACTORY.supplyC, d = FACTORY.supplyD) => c + d * L;
+/* Нижняя граница зарплаты в день day: договор Нины (если принят) с Д10, МРОТ с Д16. */
+const factoryFloor = (st, day = st.day) => ((st.contract && day >= FACTORY.contractDay) || day >= FACTORY.minWageDay ? FACTORY.floor : 0);
+/* Зарплата при найме L: по предложению труда, но не ниже границы. */
+const factoryWage = (L, floor = 0, c = FACTORY.supplyC, d = FACTORY.supplyD) => Math.max(floor, factorySupplyW(L, c, d));
+const factoryWageBill = (L, floor, c, d) => (L > 0 ? factoryWage(L, floor, c, d) * L : 0);
+/* Маржа найма (без постоянных): p·Q(L) − w·L. */
+const factoryLaborMargin = (L, { p, floor = 0, c = FACTORY.supplyC, d = FACTORY.supplyD }) => p * factoryQ(L) - factoryWageBill(L, floor, c, d);
+/* Целочисленный оптимум найма. */
+function factoryBestL(opts) {
+  let best = 0, bestM = -Infinity;
+  for (let L = 0; L <= 60; L++) { const m = factoryLaborMargin(L, opts); if (m > bestM + 1e-9) { bestM = m; best = L; } }
   return best;
 }
-/* Предельные расходы на труд при найме L (что стоит нанять L-го). */
-function factoryMarginalLaborCost(st, L) {
-  if (st.chapter === 1) return FACTORY.wMarket;
-  if (st.chapter === 3 && factorySupplyW(L) <= FACTORY.wMin) return FACTORY.wMin;
-  return factoryMRC(L);
+/* Конкурентный ориентир: если бы зарплата не зависела от найма цеха — MRP = w(L). */
+function factoryCompetitive(p = FACTORY.p, c = FACTORY.supplyC, d = FACTORY.supplyD) {
+  const L = (p * FACTORY.a - c) / (2 * FACTORY.b * p + d);
+  return { L, w: c + d * L };
+}
+/* Дискретные приросты при найме L-го: продукт в деньгах и рост расходов на труд (с прибавкой всем). */
+function factoryStep(L, opts) {
+  const c = opts.c ?? FACTORY.supplyC, d = opts.d ?? FACTORY.supplyD;
+  return { mrp: opts.p * (factoryQ(L) - factoryQ(L - 1)), mrc: factoryWageBill(L, opts.floor || 0, c, d) - factoryWageBill(L - 1, opts.floor || 0, c, d) };
+}
+
+/* ===== Котёл ===== */
+/* PV издержек котла на n оставшихся дней срока службы при ставке r: аренда против покупки (цена + обслуживание − продажа в конце). */
+function factoryBoilerMath(r = CAPITAL.rate, n = FACTORY.boiler.life, price = FACTORY.boiler.price, rent = FACTORY.boiler.rent) {
+  const B = FACTORY.boiler, a = annuity(n, r);
+  const pvRent = rent * a, pvBuy = price + B.maint * a - B.salvage / (1 + r) ** n;
+  return { n, r, pvRent, pvBuy, buyBetter: pvBuy < pvRent, saving: pvRent - pvBuy };
+}
+/* Рыночная цена б/у котла с n днями службы: сколько он сбережёт новому владельцу по сравнению с арендой. */
+const factoryBoilerValue = (n, r = CAPITAL.rate) => {
+  const B = FACTORY.boiler;
+  return (B.rent - B.maint) * annuity(n, r) + B.salvage / (1 + r) ** n;
+};
+
+const FACTORY_GOALS = [
+  { id: "monopsony", emoji: "🏭", title: "Монопсония", desc: "До договора и МРОТ найми столько, где следующий работник уже не окупает прибавку всем (MRP < MRC).", reward: 5000 },
+  { id: "boiler", emoji: "🔥", title: "Котёл по PV", desc: "Купи котёл, если по PV на срок службы это дешевле аренды.", reward: 5000 },
+  { id: "minwage", emoji: "📈", title: "Шестнадцать", desc: "При МРОТ найми выгодное число людей — занятость выросла.", reward: 5000 },
+  { id: "peak", emoji: "🎄", title: "Перед Новым годом", desc: "При цене 380 найми выгодное число людей: теперь мешает уже не МРОТ, а кривая предложения.", reward: 4000 },
+];
+const FACTORY_CHAPTERS = [
+  { n: 1, title: "Наниматель", fromDay: 1, goal: "monopsony" },
+  { n: 2, title: "Договор", fromDay: 8, goal: "boiler" },
+  { n: 3, title: "Шестнадцать", fromDay: 15, goal: "minwage" },
+];
+
+function factoryNewState(cash = CAPITAL.grant[4]) {
+  return { v: 2, level: 4, day: 1, chapter: 1, cash: Math.round(cash), L: FACTORY.startL, boiler: null, contract: null, letter: null,
+    offer: null, goals: {}, history: [], subsidiaries: [], flags: {}, last: null };
+}
+/* Купить котёл (можно уйти в минус: проценты на отрицательный остаток — по той же ставке, это и есть кредит Марка Ильича). */
+function factoryBuyBoiler(st) {
+  if (st.boiler || st.day > FACTORY.levelDays) return st;
+  const m = factoryBoilerMath();
+  return { ...st, boiler: { day: st.day, good: m.buyBetter }, cash: st.cash - FACTORY.boiler.price };
+}
+/* Договор Нины (Д10): принять — граница 1 400 сразу; Письмо против МРОТ (Д13): подписать — юрист 15 000, МРОТ всё равно вводят. */
+function factoryAnswer(st, kind, yes) {
+  if (!st.offer || st.offer !== kind) return st;
+  if (kind === "contract") return { ...st, offer: null, contract: !!yes, flags: { ...st.flags, wagePolicy: yes ? "договор" : "рынок" } };
+  if (kind === "letter") return { ...st, offer: null, letter: !!yes, cash: st.cash - (yes ? FACTORY.letterCost : 0), flags: { ...st.flags, foughtMinWage: !!yes } };
+  return st;
 }
 
 function factorySimulate(st, rng = Math.random) {
+  const day = st.day, p = factoryPrice(day), floor = factoryFloor(st);
   const L = Math.max(0, Math.round(st.L));
-  const P = FACTORY.price * (1 + FACTORY.noise * (2 * rng() - 1));
-  const wage = factoryWage(st, L), oven = st.ovenOwned ? 0 : FACTORY.ovenRent;
-  const profit = P * factoryQ(L) - wage * L - oven;
-  const interest = st.cash * FACTORY.rate; // игровая ставка; отрицательный остаток — кредит под ту же ставку
-  /* Конец горизонта печи: продать за остаточную стоимость. */
-  const salvage = st.ovenOwned && st.day >= FACTORY.ovenDays ? FACTORY.ovenSalvage : 0;
-  let dividend = 0;
-  const subsidiaries = (st.subsidiaries || []).map((s) => { if (s.daysLeft > 0) { dividend += s.dividend; return { ...s, daysLeft: s.daysLeft - 1 }; } return s; });
-  const opt = { ...factoryLabor(factoryMarket(st)), Lint: factoryBestL(st) };
+  const Q = factoryQ(L), wage = L > 0 ? factoryWage(L, floor) : 0;
+  const boilerCost = st.boiler ? FACTORY.boiler.maint : FACTORY.boiler.rent;
+  const margin = p * Q - wage * L;
+  const profit = margin - FACTORY.shopRent - boilerCost;
+  const pay = capitalPayDividends(st.subsidiaries), interest = capitalInterest(st.cash);
+  /* В последний день уровня котёл продаётся по рыночной цене б/у (оставшийся срок службы). */
+  let resale = 0;
+  if (st.boiler && day === FACTORY.levelDays) resale = Math.round(factoryBoilerValue(FACTORY.boiler.life - (day - st.boiler.day + 1)));
+
+  const opts = { p, floor }, Lbest = factoryBestL(opts);
   const goals = { ...st.goals }, newGoals = [];
-  const hit = (id) => { if (!goals[id]) { goals[id] = st.day; newGoals.push(id); } };
-  if (L === opt.Lint) hit(st.chapter === 1 ? "mrp" : st.chapter === 2 ? "monopsony" : "minwage");
-  if (st.ovenOwned && st.ovenGood) hit("oven");
+  const hit = (id) => { if (!goals[id]) { goals[id] = day; newGoals.push(id); } };
+  if (!floor && L === Lbest) hit("monopsony");
+  if (st.boiler && st.boiler.good) hit("boiler");
+  if (day >= FACTORY.minWageDay && day < FACTORY.peakFrom && L === Lbest) hit("minwage");
+  if (day >= FACTORY.peakFrom && L === Lbest) hit("peak");
   let reward = 0;
   for (const id of newGoals) reward += FACTORY_GOALS.find((g) => g.id === id)?.reward || 0;
+
+  const nd = day + 1;
   let chapter = st.chapter, newChapter = null;
   const up = FACTORY_CHAPTERS[chapter];
-  if (up && st.day + 1 >= up.fromDay) { chapter += 1; newChapter = chapter; }
-  /* Дискретные приросты: L-й работник и следующий (L + 1)-й — пирожки и рост расходов на труд с учётом прибавки всем. */
-  const dQl = factoryQ(L) - factoryQ(L - 1), dCl = factoryCost(st, L) - factoryCost(st, Math.max(0, L - 1));
-  const dQn = factoryQ(L + 1) - factoryQ(L), dCn = factoryCost(st, L + 1) - factoryCost(st, L);
-  const report = { day: st.day, L, P, Q: factoryQ(L), wage, oven, profit, interest, dividend, reward, salvage, newGoals, newChapter, chapter: st.chapter,
-    mrp: factoryMRP(L), mlc: factoryMarginalLaborCost(st, L), opt, dQl, dCl, dQn, dCn };
-  const next = { ...st, day: st.day + 1, chapter, cash: Math.round(st.cash + profit + interest + dividend + reward + salvage), goals, subsidiaries,
-    ovenOwned: salvage ? false : st.ovenOwned,
-    history: [...(st.history || []), { day: st.day, profit: Math.round(profit) }].slice(-60), last: report, at: Date.now() };
+  if (up && nd >= up.fromDay) { chapter += 1; newChapter = chapter; }
+  const offer = nd === FACTORY.contractDay && st.contract == null ? "contract" : nd === FACTORY.letterDay && st.letter == null ? "letter" : st.offer;
+
+  const report = {
+    day, L, Q, p, wage, floor, margin, shop: FACTORY.shopRent, boilerCost, profit, resale, dividend: pay.dividend, interest, reward, newGoals, newChapter,
+    chapter: st.chapter, Lbest, step: L > 0 ? factoryStep(L, opts) : null, next: factoryStep(L + 1, opts), mode: day <= FACTORY.oracleDays ? "oracle" : "facts",
+  };
+  const next = {
+    ...st, day: nd, chapter, offer, cash: Math.round(st.cash + profit + pay.dividend + interest + reward + resale), goals, subsidiaries: pay.subsidiaries,
+    boiler: resale ? { ...st.boiler, sold: day, resale } : st.boiler,
+    history: [...(st.history || []), { day, profit: Math.round(profit) }].slice(-60), last: report, at: Date.now(),
+  };
   return { next, report };
 }
 
 const fmt = (x, d = 0) => x.toFixed(d).replace(".", ",");
-/* Вердикт на дискретных приростах: что дал L-й работник и что дал бы следующий — против того, во что они обходятся
-   (на монопсонии и на углу МРОТ это не зарплата, а рост расходов на всех). */
+/* Вердикт на дискретных приростах: L-й работник и следующий — против роста расходов на труд (на монопсонии это не
+   зарплата, а прибавка всем; на углу МРОТ — ровно МРОТ, пока хватает желающих). При L = 0 — только про первого. */
 function factoryVerdict(r) {
-  const P = FACTORY.price, parts = [];
-  parts.push(`${r.L}-й работник добавил ≈ ${fmt(r.dQl, 1)} пирожка (≈ ${fmt(P * r.dQl)} ₽) и увеличил расходы на труд на ≈ ${fmt(r.dCl)} ₽${r.chapter > 1 ? " (с учётом прибавки всем)" : ""}.`);
-  parts.push(`Следующий добавил бы ≈ ${fmt(P * r.dQn)} ₽, а стоил бы ≈ ${fmt(r.dCn)} ₽.`);
-  if (P * r.dQn > r.dCn) parts.push("Нанимать ещё выгодно.");
-  else if (P * r.dQl < r.dCl) parts.push("Последний работник убыточен — нанимай меньше.");
-  else parts.push("Найм оптимален: последний окупается, следующий — нет.");
-  if (r.chapter === 2) parts.push(`Монопсония: оптимум MRP = MRC — ${r.opt.Lint} работников по ${fmt(factorySupplyW(r.opt.Lint))} ₽. Если бы зарплата не зависела от найма пекарни, было бы ${fmt(factoryCompetitiveEq().L)} по ${fmt(factoryCompetitiveEq().w)} ₽.`);
-  if (r.chapter === 3) parts.push(`С МРОТ ${FACTORY.wMin} ₽ по нему готовы работать ${fmt(r.opt.Ls || 0, 1)} человек: оптимум вырос с монопсонических ${factoryBestL({ chapter: 2 })} до ${r.opt.Lint} (как потолок цены у монополиста); дальше MRC прыгает — каждый новый поднимает зарплату всем.`);
+  const parts = [], s = r.step, n = r.next;
+  if (s) parts.push(`${r.L}-й работник добавил ${fmt(s.mrp / r.p, 2)} набора (${fmt(s.mrp)} ₽), а расходы на труд выросли на ${fmt(s.mrc)} ₽${r.floor && r.wage === r.floor ? " — ровно граница, прибавки всем нет" : " — с прибавкой всем"}.`);
+  parts.push(`Следующий принёс бы ${fmt(n.mrp)} ₽, а стоил бы ${fmt(n.mrc)} ₽.`);
+  if (n.mrp > n.mrc) parts.push(r.mode === "oracle" ? "Мало людей: последний, кого ты взял(а), приносит больше, чем стоит." : "Нанимать ещё выгодно.");
+  else if (s && s.mrp < s.mrc) parts.push(r.mode === "oracle" ? "Много: последний стоит тебе дороже, чем приносит — ты же всем поднял(а)." : "Последний работник убыточен — нанимай меньше.");
+  else parts.push("Сходится: последний окупается, следующий — нет.");
+  const comp = factoryCompetitive(r.p);
+  if (!r.floor) parts.push(`Ты единственный работодатель: MRC > w. Если бы зарплата не зависела от твоего найма, было бы ${fmt(comp.L, 1)} человек по ${fmt(comp.w)} ₽.`);
+  else parts.push(`Граница ${r.floor} ₽: по ней готовы работать ${fmt((r.floor - FACTORY.supplyC) / FACTORY.supplyD)} человек — до них каждый новый стоит ровно ${r.floor} ₽.`);
   return parts.join(" ");
 }
 
 /* ===== Экзамен уровня 4 =====
-   4 задачи на копии пекарни (касса не меняется), параметры случайны. Оценка — по решениям:
-   найм — 1 − (|L − L*| − 0,5)/L*; печь — верное решение по NPV (1 или 0). Медали — как на уровнях 1–3. */
-const factoryExamOpen = (f) => (f.chapter || 1) >= 3 && f.day >= 22;
-/* Конкурентная зарплата задачи (MRP = w(L) на кривой предложения). */
-function factoryExamCompW(d) {
-  const L = (d.P * FACTORY.a - d.c) / (2 * FACTORY.b * d.P + d.d);
-  return d.c + d.d * L;
-}
+   3 сценария (не зависят от прошлых решений игрока), числа случайны по сиду:
+     1. Монопсония без границы; 2. МРОТ (иногда выше MRP при монопсоническом найме — тогда занятость падает);
+     3. Ставка изменилась: котёл (аренда или покупка на срок службы 48 дней) + найм при МРОТ.
+   Оценка дня — 1 − 2·√(1 − маржа/маржа*) ≈ 1 − 2·|ΔL|/L*: маржа найма p·Q − w·L, в дне 3 — минус переплата неверного варианта котла
+   в дневном эквиваленте (ΔPV/a(r, 48)): ошибка стоит пропорционально деньгам, а не «всё или ничего». */
+const FACTORY_EXAM_KINDS = [
+  { kind: "monopsony", title: "До 15-го: МРОТ ещё нет" },
+  { kind: "minwage", title: "МРОТ" },
+  { kind: "boiler", title: "Ставка изменилась" },
+];
+const factoryExamOpen = (f) => (f.chapter || 1) >= 3 && f.day >= FACTORY.examFromDay;
 function factoryExamNew(f, seed) {
   const rng = lavkaRng(seed), pick = (lo, hi) => lo + Math.floor(rng() * (hi - lo + 1));
-  const P1 = pick(90, 120), w1 = pick(16, 26) * 100;
-  const comp = { kind: "competitive", title: "Рынок труда", P: P1, w: w1,
-    text: `Пирожок стоит ${P1} ₽, зарплата на рынке ${w1} ₽. MPL = 40 − L. Сколько нанять?` };
-  const P2 = pick(90, 110), c2 = pick(3, 7) * 100, d2 = pick(6, 9) * 10;
-  const mono = { kind: "monopsony", title: "Монопсония", P: P2, c: c2, d: d2,
-    text: `Ты единственный работодатель: чтобы нанять L человек, платишь каждому w = ${c2} + ${d2}·L. Пирожок ${P2} ₽, MPL = 40 − L. Сколько нанять?` };
-  const P3 = pick(95, 105), c3 = 500, d3 = 75;
-  const base = { P: P3, c: c3, d: d3 }, wComp = factoryExamCompW(base);
-  const wMin = pick(0, 3) === 0 ? Math.round(wComp / 100 + 3) * 100 : pick(16, 19) * 100;
-  const minw = { kind: "minwage", title: "МРОТ", ...base, wMin,
-    text: `Ты единственный работодатель: w = ${c3} + ${d3}·L, но введён МРОТ ${wMin} ₽. Пирожок ${P3} ₽, MPL = 40 − L. Сколько нанять?` };
-  const rent = pick(15, 25) * 100, price = pick(6, 12) * 10000, salvage = pick(0, 4) * 5000;
-  const oven = { kind: "oven", title: "Печь", rent, price, salvage,
-    text: `Аренда печи ${rent} ₽/день или покупка за ${price} ₽ с продажей через 60 дней за ${salvage} ₽. Ставка r = 0,5% в день. Купить?` };
-  return { seed, results: [], days: [comp, mono, minw, oven] };
+  const days = FACTORY_EXAM_KINDS.map((k) => {
+    const p = pick(20, 40) * 10, c = pick(6, 18) * 50, d = pick(5, 10) * 10;
+    const base = { kind: k.kind, title: k.title, p, c, d, seed: Math.floor(rng() * 2 ** 31) };
+    if (k.kind === "monopsony") return { ...base, floor: 0, text: `Цена набора без сырья ${p} ₽. Чтобы пришли L человек, платишь каждому ${c} + ${d}·L. Сколько людей?` };
+    const Lm = factoryBestL({ p, c, d }), wm = factorySupplyW(Lm, c, d), mrpLm = p * (factoryQ(Lm) - factoryQ(Lm - 1));
+    /* МРОТ: обычно между w_m и MRP(L_m) — занятость растёт; иногда выше MRP(L_m) — занятость ниже монопсонической. */
+    const high = rng() < 0.3;
+    const floor = high ? Math.round((mrpLm + pick(1, 6) * 50) / 50) * 50 : Math.round((wm + rng() * (mrpLm - wm)) / 50) * 50;
+    if (k.kind === "minwage") return { ...base, floor, text: `Цена ${p} ₽, предложение труда ${c} + ${d}·L, МРОТ ${floor} ₽. Сколько людей?` };
+    const r = [0.015, 0.02, 0.025, 0.03, 0.035][pick(0, 4)];
+    return { ...base, floor, r, text: `Ставка теперь ${String(r * 100).replace(".", ",")}% в день. Котёл на 48 дней службы: аренда ${FACTORY.boiler.rent} ₽/день или покупка ${FACTORY.boiler.price} ₽ (обслуживание ${FACTORY.boiler.maint} ₽/день, через 48 дней продашь за ${FACTORY.boiler.salvage}). И сколько людей — цена ${p} ₽, предложение ${c} + ${d}·L, МРОТ ${floor} ₽?` };
+  });
+  return { seed, results: [], days };
+}
+/* Маржа дня экзамена: найм; в дне «котёл» — минус дневной эквивалент PV выбранного варианта. */
+function factoryExamMargin(d, ans) {
+  const L = Math.max(0, Math.round(ans.L || 0));
+  let m = factoryLaborMargin(L, d);
+  /* Котёл: вычитаем только переплату неверного варианта (в дневном эквиваленте PV) — маржа эталона остаётся маржой найма. */
+  if (d.kind === "boiler") { const bm = factoryBoilerMath(d.r); m -= Math.max(0, (ans.buy ? bm.pvBuy : bm.pvRent) - Math.min(bm.pvBuy, bm.pvRent)) / annuity(FACTORY.boiler.life, d.r); }
+  return m;
 }
 function factoryExamBest(d) {
-  const { a, b } = FACTORY;
-  if (d.kind === "competitive") return { L: Math.max(0, (a - d.w / d.P) / (2 * b)) };
-  if (d.kind === "monopsony") return { L: Math.max(0, (d.P * a - d.c) / (2 * b * d.P + 2 * d.d)) };
-  if (d.kind === "minwage") {
-    const Lm = (d.P * a - d.c) / (2 * b * d.P + 2 * d.d), wm = d.c + d.d * Lm;
-    if (d.wMin <= wm) return { L: Lm };
-    return { L: Math.min((d.wMin - d.c) / d.d, Math.max(0, (a - d.wMin / d.P) / (2 * b))) };
-  }
-  const r = FACTORY.rate, N = FACTORY.ovenDays;
-  return { buy: d.price - d.salvage / (1 + r) ** N < (d.rent * (1 - (1 + r) ** -N)) / r };
+  const out = { L: factoryBestL(d) };
+  if (d.kind === "boiler") out.buy = factoryBoilerMath(d.r).buyBetter;
+  return out;
 }
 function factoryExamPlayDay(f, exam, ans) {
   const i = exam.results.length, d = exam.days[i], best = factoryExamBest(d);
-  let score;
-  if (d.kind === "oven") score = ans.buy === best.buy ? 1 : 0;
-  else { const L = Math.max(0, Math.round(ans.L || 0)); score = Math.max(0, 1 - Math.max(0, Math.abs(L - best.L) - 0.5) / Math.max(1, best.L)); }
-  const res = { ans, best, score };
+  const res = { ans, best, playerMargin: factoryExamMargin(d, ans), botMargin: factoryExamMargin(d, best) };
   return { exam: { ...exam, results: [...exam.results, res] }, result: res, done: i + 1 === exam.days.length };
 }
 function factoryExamResult(exam) {
-  if (!exam.results.length) return null;
-  const days = exam.results.map((r) => r.score);
+  if (!exam.results.length || exam.results.some((r) => !(r.botMargin > 0))) return null;
+  /* √(1 − маржа/маржа*) = |ΔL|/L* — относительная ошибка найма (прибыль по L квадратична). Кривая прибыли по найму
+     плоская, поэтому шкала вдвое строже, чем на уровнях 1–3: ошибка 25% в найме стоит 50% дня. */
+  const days = exam.results.map((r) => Math.max(0, 1 - 2 * Math.sqrt(Math.max(0, 1 - Math.min(1, r.playerMargin / r.botMargin)))));
   const eff = days.reduce((x, y) => x + y, 0) / days.length, minDay = Math.min(...days);
   return { eff, minDay, days, medal: lavkaExamMedal(eff, minDay) };
+}
+/* π̄_эт — матожидание дневной прибыли эталона (маржа найма − аренда цеха − аренда котла), без удачи сида. */
+function factoryExamExpectedProfit() {
+  let sum = 0, n = 0;
+  for (let s = 1; s <= 200; s++) for (const d of factoryExamNew(null, 7919 * s).days) {
+    sum += factoryLaborMargin(factoryBestL(d), d) - FACTORY.shopRent - FACTORY.boiler.rent; n++;
+  }
+  return sum / n;
 }
 function factoryExamFinish(f, exam) {
   const res = factoryExamResult(exam), prev = f.examBest || { eff: -Infinity, medal: null, attempts: 0 };
   const better = !!res && res.eff > prev.eff;
   return { ...f, examActive: null, examBest: { eff: better ? res.eff : prev.eff, medal: better ? (res.medal ? res.medal.id : null) : prev.medal,
-    day: better ? f.day : prev.day, attempts: (prev.attempts || 0) + 1 } };
+    piBot: factoryExamExpectedProfit(), day: better ? f.day : prev.day, attempts: (prev.attempts || 0) + 1 } };
 }
 
 /* Завершить уровень 3 (нужна медаль экзамена сети): продать сеть или оставить дочкой; дочки копятся. */
 function levelFinish3(st, choice) {
-  const medal = st.chain && st.chain.examBest && st.chain.examBest.medal;
-  if (!medal) return null;
-  const sale = Math.round(factorySalePrice3(medal));
-  const factory = factoryNewState(FACTORY.grant + (choice === "sell" ? sale : 0));
-  factory.subsidiaries = [...(st.chain.subsidiaries || []).filter((s) => s.daysLeft > 0)];
-  if (choice === "keep") factory.subsidiaries.push({ name: "Сеть кофеен", level: 3, medal, dividend: LEVEL3_DIVIDEND[medal], daysLeft: FACTORY.dividendDays });
-  return { ...st, level: 4, factory, level3: { medal, choice, sale, closedDay: st.chain.day } };
+  const t = capitalTransition(3, st.chain && st.chain.examBest, choice, "Сеть кофеен");
+  if (!t) return null;
+  const factory = factoryNewState(t.cash);
+  factory.subsidiaries = [...(st.chain.subsidiaries || []).filter((s) => s.daysLeft > 0), ...(t.subsidiary ? [t.subsidiary] : [])];
+  return { ...st, level: 4, factory, level3: { medal: t.medal, choice, sale: t.sale, D: t.D, closedDay: st.chain.day } };
 }
 
 export {
-  factoryExamOpen, factoryExamCompW, factoryExamNew, factoryExamBest, factoryExamPlayDay, factoryExamResult, factoryExamFinish,
-  FACTORY, LEVEL3_DIVIDEND, FACTORY_GOALS, FACTORY_CHAPTERS,
-  factoryQ, factoryMPL, factoryMRP, factorySupplyW, factoryMRC, factoryCompetitiveEq, factoryLabor, factoryOvenMath,
-  factorySalePrice3, factoryNewState, factoryBuyOven, factoryCost, factoryBestL, factoryMarket, factoryWage, factoryMarginalLaborCost,
-  factorySimulate, factoryVerdict, levelFinish3, lavkaRng, lavkaExamMedal,
+  FACTORY, FACTORY_GOALS, FACTORY_CHAPTERS, FACTORY_EXAM_KINDS,
+  factoryQ, factoryMP, factoryPrice, factorySupplyW, factoryFloor, factoryWage, factoryWageBill, factoryLaborMargin, factoryBestL,
+  factoryCompetitive, factoryStep, factoryBoilerMath, factoryBoilerValue, factoryNewState, factoryBuyBoiler, factoryAnswer,
+  factorySimulate, factoryVerdict, factoryExamOpen, factoryExamNew, factoryExamMargin, factoryExamBest, factoryExamPlayDay,
+  factoryExamResult, factoryExamExpectedProfit, factoryExamFinish, levelFinish3, lavkaRng, lavkaExamMedal,
 };
