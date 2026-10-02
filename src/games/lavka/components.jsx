@@ -83,4 +83,36 @@ function LevelFinishCapital({ level, examBest, nextTitle, business, onFinish }) 
   );
 }
 
-export { LavkaStepper, LavkaAwning, LavkaCard, LevelFinishCapital };
+/* «Вопрос дня» на уровнях 2–5 (вопросы сценария «Путь компании», src/games/lavka/quiz-scenario.js): один вопрос в день,
+   по порядку уровня. Награды нет — только счёт верных ответов (баланс уровней не меняется). quiz = { lastDay, right, total }. */
+function DayQuiz({ day, items, quiz, onAnswer }) {
+  const [picked, setPicked] = useState(null);
+  if (!items || !items.length) return null;
+  const item = items[(day - 1) % items.length];
+  const answered = quiz && quiz.lastDay === day;
+  if (answered && picked == null) return null;
+  const order = item.opts.map((_, i) => i).sort((a, b) => ((a * 7 + day * 3) % 5) - ((b * 7 + day * 3) % 5));
+  return (
+    <LavkaCard tint={COLORS.blueSoft}>
+      <p className="text-xs" style={{ color: COLORS.inkSoft }}>Вопрос дня{quiz && quiz.total ? ` · верно ${quiz.right} из ${quiz.total}` : ""}</p>
+      <p className="text-sm font-semibold mt-1">{item.q}</p>
+      <div className="flex flex-col gap-1.5 mt-3">
+        {order.map((i) => {
+          const isRight = i === item.a, isPicked = picked === i;
+          const bg = picked == null ? COLORS.surfaceSolid : isRight ? COLORS.sageSoft : isPicked ? COLORS.rustSoft : COLORS.surfaceSolid;
+          const bd = picked == null ? COLORS.line : isRight ? COLORS.sage : isPicked ? COLORS.rust : COLORS.line;
+          return (
+            <button key={i} disabled={picked != null} onClick={() => { setPicked(i); onAnswer(i === item.a, item.id); }}
+              className="text-left text-sm px-3.5 py-2 rounded-xl" style={{ background: bg, border: `1px solid ${bd}`, color: COLORS.ink }}>{item.opts[i]}</button>
+          );
+        })}
+      </div>
+      {picked != null && <p className="text-sm mt-3 leading-relaxed" style={{ color: COLORS.ink }}>{picked === item.a ? "✅ Верно. " : "❌ Не совсем. "}{item.why}</p>}
+    </LavkaCard>
+  );
+}
+/* Обновить счёт вопросов дня в состоянии уровня. */
+const dayQuizAnswer = (lvl, ok) => (lvl.quiz && lvl.quiz.lastDay === lvl.day ? lvl
+  : { ...lvl, quiz: { lastDay: lvl.day, right: ((lvl.quiz && lvl.quiz.right) || 0) + (ok ? 1 : 0), total: ((lvl.quiz && lvl.quiz.total) || 0) + 1 } });
+
+export { LavkaStepper, LavkaAwning, LavkaCard, LevelFinishCapital, DayQuiz, dayQuizAnswer };
