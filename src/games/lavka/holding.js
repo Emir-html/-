@@ -8,7 +8,8 @@
    Ставка r = 2% в день (игровая). Правки экономиста:
      - кредит: при ставке кредита = ставке депозита PV схем одинаков — решает ликвидность, а не «переплата»;
      - премия страховки платится в день начала половодья (18-й) — та же дата, что и убыток: дисконт не искажает сравнение;
-       экстренный кредит после убытка — 5% в день (по обычной ставке после убытка не дают), простые проценты на 20 дней;
+       экстренный кредит, если касса ушла в минус (в любой день: после убытка по обычной ставке не дают) — 5% в день
+       сложных на 20 дней;
      - красный флаг — сигнал: с вероятностью 0,6 он появляется, и тогда паводок с вероятностью 0,5; без флага паводка нет
        (итого 0,3). Перенести запасы можно только после флага — ценность информации = выгода «переносить только когда нужно»;
      - дамба: после флага p = 0,5, взнос героя решающий — выгоден и эгоисту (это не «чистый» безбилетник);
@@ -225,7 +226,8 @@ function holdingNextDay(h) {
   if (day === HOLDING.floodDay && h.world.flood) { flood = holdingFloodLoss(h); events.push("flood"); }
   let cash = h.cash + pay.dividend + projectCF - loanPay + interest - fx - tax - premium - (flood ? flood.net : 0);
   let emergencyDebt = h.emergencyDebt || 0;
-  if (day === HOLDING.floodDay && cash < 0) { emergency = -cash; emergencyDebt += emergency * (1 + HOLDING.emergency.rate) ** HOLDING.emergency.days; cash = 0; events.push("emergency"); }
+  /* Касса в минусе в любой день — только экстренный кредит (дешёвого овердрафта нет): вернуть S·1,05²⁰ через 20 дней. */
+  if (cash < 0) { emergency = -cash; emergencyDebt += emergency * (1 + HOLDING.emergency.rate) ** HOLDING.emergency.days; cash = 0; events.push("emergency"); }
   const nd = day + 1;
   let chapter = h.chapter, newChapter = null;
   const up = HOLDING_CHAPTERS[chapter];

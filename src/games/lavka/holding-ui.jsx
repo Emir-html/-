@@ -139,7 +139,7 @@ function HoldingScreen({ st, update }) {
             {rep.tax > 0 && <Row l="Налог УСН за период" v={"−" + rub(rep.tax)} />}
             {rep.premium > 0 && <Row l="Премия страховки" v={"−" + rub(rep.premium)} />}
             {rep.flood && <Row l={`Паводок: убыток ${rub(rep.flood.gross)}, страховка ${rub(rep.flood.payout)}`} v={"−" + rub(rep.flood.net)} />}
-            {rep.emergency > 0 && <Row l="Экстренный кредит (5% в день на 20 дней)" v={rub(rep.emergency)} />}
+            {rep.emergency > 0 && <Row l="Касса в минусе — экстренный кредит (5% в день на 20 дней)" v={rub(rep.emergency)} />}
           </div>
           {rep.fx > 0 && <p className="text-sm mt-2">Курс оказался {rep.spot} ₽. {h.hedged ? `Форвард зафиксировал 96 ₽ — ${rep.spot > 96 ? "сегодня это выгодно" : "сегодня это дороже спота"}.` : `Без форварда — ${rep.spot} ₽.`} Решение оценивают до того, как курс стал известен: ожидание 95 ₽, форвард 96 — цена определённости 1 000 ₽.</p>}
           {rep.flood && <p className="text-sm mt-2">Сонная вышла из берегов: Набережная и Заречье под водой, парк и вокзал — сухие. Кофейни и цех стоят у одной реки: вероятность потерять оба — 0,3, а не 0,3 × 0,3 = 0,09. Это один риск два раза.</p>}
@@ -286,7 +286,7 @@ function HoldingScreen({ st, update }) {
             <p className="font-semibold">⛲ Скамейка у фонтана: продажа холдинга</p>
             <Row l={`Плотников (рейтинг ${medalOf(h.examBest.medal).emoji})`} v={rub(o.plotnikov)} />
             <Row l="Железнова (95% после аудита)" v={rub(o.zheleznova)} />
-            <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Истинная стоимость = дочки × a(2%, 30) + PV оставшихся потоков проектов = {rub(o.trueValue)}. Плотников видит только рейтинг и платит по среднему продающих; лучшие уходят к тем, кто смотрит отчёты, — и средняя цена у него падает. Тому, кто лучше своего рейтинга, выгодно раскрыться; кто хуже — промолчать.</p>
+            <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Истинная стоимость = дочки (PV оставшихся выплат + a(2%, 30) дневных дивидендов после них) + PV оставшихся потоков проектов = {rub(o.trueValue)}. Плотников видит только рейтинг и платит по среднему продающих; лучшие уходят к тем, кто смотрит отчёты, — и средняя цена у него падает. Тому, кто лучше своего рейтинга, выгодно раскрыться; кто хуже — промолчать.</p>
             <div className="flex gap-2 mt-2 flex-wrap">
               <button onClick={() => setH((x) => holdingSell(x, "plotnikov"))} className="text-sm px-3.5 py-2 rounded-full" style={ghost}>Продать Плотникову</button>
               <button onClick={() => setH((x) => holdingSell(x, "zheleznova"))} className="text-sm px-3.5 py-2 rounded-full" style={ghost}>Открыть отчёты Железновой</button>

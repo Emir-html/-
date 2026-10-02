@@ -180,3 +180,10 @@ test("налог без выбора — УСН 6%; перенос и дамба
   near(H.holdingActionGain(bare, { moved: true }), 0.5 * 0.4 * 400000);
   assert.ok(H.holdingMove(bare).goals.flag);
 });
+
+test("касса в минусе в любой день — экстренный кредит, а не дешёвый овердрафт", () => {
+  const h = { ...withSubs(H.holdingNewState(30000, 1)), day: 21, taxRegime: "usn6" };
+  const out = H.holdingNextDay(h);
+  assert.ok(out.report.emergency > 0); assert.equal(out.next.cash, 0);
+  near(out.next.emergencyDebt, out.report.emergency * 1.05 ** 20, 1e-6);
+});
