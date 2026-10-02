@@ -9,6 +9,7 @@ import {
   fairExamOpen, fairExamNew, fairExamPlayDay, fairExamResult, fairExamFinish,
 } from "./fair.js";
 import { LavkaStepper, LavkaAwning, LavkaCard } from "./components.jsx";
+import { LevelFinish2Card } from "./chain-ui.jsx";
 
 /* Карточка в «Лавке»: экзамен сдан с медалью → закрыть уровень 1: продать лавку или оставить дочкой. */
 function LevelFinishCard({ st, update }) {
@@ -179,6 +180,7 @@ function FairScreen({ st, update }) {
             </LavkaCard>
           )}
 
+          <LevelFinish2Card st={st} update={update} />
           {fairExamOpen(fair) && (
             <LavkaCard tint={COLORS.blueSoft}>
               <p className="font-semibold">🎓 Экзамен уровня 2 открыт</p>

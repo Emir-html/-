@@ -15,6 +15,7 @@ import {
 } from "./model.js";
 import { LavkaStepper, LavkaAwning, LavkaCard } from "./components.jsx";
 import { FairScreen, LevelFinishCard } from "./fair-ui.jsx";
+import { ChainScreen } from "./chain-ui.jsx";
 
 function LavkaEventCard({ st }) {
   const [open, setOpen] = useState(false);
@@ -673,7 +674,7 @@ function LavkaScreen({ onBack, theme, onToggleTheme, studyBank }) {
 
   const takeLoan = () => update((s) => ({ ...s, cash: s.cash + 3000, debt: (s.debt || 0) + 3300 }));
 
-  enterRef.current = st.examActive || st.level === 2 ? null : phase === "morning" && tab === "shop" && canOpen ? openShop
+  enterRef.current = st.examActive || (st.level || 1) >= 2 ? null : phase === "morning" && tab === "shop" && canOpen ? openShop
     : phase === "report" ? () => { setPhase("morning"); setTab("shop"); window.scrollTo?.(0, 0); } : null;
 
   const tabs = [["shop", "Лавка"], ["upgrades", "Улучшения"], ["notebook", "Тетрадь"], ["goals", "Цели"]];
@@ -704,12 +705,13 @@ function LavkaScreen({ onBack, theme, onToggleTheme, studyBank }) {
 
       <main className="max-w-3xl mx-auto px-5 pb-24">
         {st.level === 2 && st.fair && <FairScreen st={st} update={update} />}
+        {st.level === 3 && st.chain && <ChainScreen st={st} update={update} />}
 
-        {st.level !== 2 && <LavkaAwning title="Лавка" sub={`Глава ${st.chapter || 1} «${LAVKA_CHAPTERS[(st.chapter || 1) - 1].title}» · день ${st.day}, ${LAVKA_WEEKDAYS[lavkaWeekday(st.day)]} · на счёте ${lavkaRub(st.cash)}${st.debt > 0 ? ` · долг ${lavkaRub(st.debt)}` : ""} · лояльность ${points.map((p) => Math.round(((st.rep || {})[p] || 1) * 100) + "%").join(" / ")}`} />}
+        {(st.level || 1) === 1 && <LavkaAwning title="Лавка" sub={`Глава ${st.chapter || 1} «${LAVKA_CHAPTERS[(st.chapter || 1) - 1].title}» · день ${st.day}, ${LAVKA_WEEKDAYS[lavkaWeekday(st.day)]} · на счёте ${lavkaRub(st.cash)}${st.debt > 0 ? ` · долг ${lavkaRub(st.debt)}` : ""} · лояльность ${points.map((p) => Math.round(((st.rep || {})[p] || 1) * 100) + "%").join(" / ")}`} />}
 
-        {st.level !== 2 && st.examActive && <LavkaExam st={st} update={update} />}
+        {(st.level || 1) === 1 && st.examActive && <LavkaExam st={st} update={update} />}
 
-        {st.level !== 2 && !st.examActive && phase === "morning" && (
+        {(st.level || 1) === 1 && !st.examActive && phase === "morning" && (
           <div className="flex gap-1.5 mb-4 flex-wrap">
             {tabs.map(([id, label]) => (
               <button key={id} onClick={() => setTab(id)} className="text-sm px-4 py-2 rounded-full"
@@ -720,10 +722,10 @@ function LavkaScreen({ onBack, theme, onToggleTheme, studyBank }) {
           </div>
         )}
 
-        {st.level !== 2 && !st.examActive && phase === "running" && rep && <LavkaRun rep={rep} onDone={() => setPhase("report")} />}
-        {st.level !== 2 && !st.examActive && phase === "report" && rep && <LavkaReport rep={rep} st={st} onNext={() => { setPhase("morning"); setTab("shop"); window.scrollTo?.(0, 0); }} />}
+        {(st.level || 1) === 1 && !st.examActive && phase === "running" && rep && <LavkaRun rep={rep} onDone={() => setPhase("report")} />}
+        {(st.level || 1) === 1 && !st.examActive && phase === "report" && rep && <LavkaReport rep={rep} st={st} onNext={() => { setPhase("morning"); setTab("shop"); window.scrollTo?.(0, 0); }} />}
 
-        {st.level !== 2 && !st.examActive && phase === "morning" && tab === "shop" && (
+        {(st.level || 1) === 1 && !st.examActive && phase === "morning" && tab === "shop" && (
           <div>
             {st.day === 1 && !st.last && (
               <LavkaCard tint={COLORS.sageSoft}>
@@ -782,7 +784,7 @@ function LavkaScreen({ onBack, theme, onToggleTheme, studyBank }) {
           </div>
         )}
 
-        {st.level !== 2 && !st.examActive && phase === "morning" && tab === "upgrades" && (
+        {(st.level || 1) === 1 && !st.examActive && phase === "morning" && tab === "upgrades" && (
           <div>
             {LAVKA_UPGRADES.map((u) => {
               const owned = !!st.upgrades[u.id], afford = st.cash >= u.cost;
@@ -824,7 +826,7 @@ function LavkaScreen({ onBack, theme, onToggleTheme, studyBank }) {
           </div>
         )}
 
-        {st.level !== 2 && !st.examActive && phase === "morning" && tab === "notebook" && (
+        {(st.level || 1) === 1 && !st.examActive && phase === "morning" && tab === "notebook" && (
           <div>
             <LavkaCard>
               <div className="flex gap-1.5 flex-wrap mb-3">
@@ -848,7 +850,7 @@ function LavkaScreen({ onBack, theme, onToggleTheme, studyBank }) {
           </div>
         )}
 
-        {st.level !== 2 && !st.examActive && phase === "morning" && tab === "goals" && (
+        {(st.level || 1) === 1 && !st.examActive && phase === "morning" && tab === "goals" && (
           <div>
             <LavkaCard>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

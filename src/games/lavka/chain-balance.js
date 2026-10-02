@@ -9,14 +9,14 @@ const opts = (st, over = {}) => ({ A: C.chainA(st), w: C.CHAIN.w, open: st.open,
 
 const strategies = {
   "оптимум: план, закрыть в спад, открыть после": (st) => {
-    if (st.chapter === 2 && st.open[1]) st = C.chainSetOpen(st, 1, false);
-    if (st.chapter === 3 && !st.open[1]) st = C.chainSetOpen(st, 1, true);
+    if (st.chapter === 2 && st.open[1] && !st.closeIn[1]) st = C.chainSetOpen(st, 1, false);
+    if (st.chapter === 3 && (!st.open[1] || st.closeIn[1])) st = C.chainSetOpen(st, 1, true);
     return { ...st, q: C.chainPlan(opts(st)).q.map(Math.round) };
   },
   "оптимум, но никогда не закрывает": (st) => ({ ...st, q: C.chainPlan(opts(st)).q.map(Math.round) }),
   "MR = MC без учёта скидки": (st) => {
-    if (st.chapter === 2 && st.open[1]) st = C.chainSetOpen(st, 1, false);
-    if (st.chapter === 3 && !st.open[1]) st = C.chainSetOpen(st, 1, true);
+    if (st.chapter === 2 && st.open[1] && !st.closeIn[1]) st = C.chainSetOpen(st, 1, false);
+    if (st.chapter === 3 && (!st.open[1] || st.closeIn[1])) st = C.chainSetOpen(st, 1, true);
     return { ...st, q: C.chainPlan(opts(st, { discount: false })).q.map(Math.round) };
   },
   "оптимальный Q, но пополам между кухнями": (st) => {
@@ -31,7 +31,10 @@ for (const [name, fn] of Object.entries(strategies)) {
   let t = 0, g = 0;
   for (let i = 0; i < RUNS; i++) {
     let st = C.chainNewState(1e5); const rng = L.lavkaRng(900 + i);
-    for (let d = 0; d < DAYS; d++) { st = fn(st); const out = C.chainSimulate(st, rng); t += out.report.profit; st = out.next; }
+    for (let d = 0; d < DAYS; d++) {
+      const before = st.cash; st = fn(st); t -= before - st.cash; // переоткрытие кухни — тоже расход
+      const out = C.chainSimulate(st, rng); t += out.report.profit; st = out.next;
+    }
     g += Object.keys(st.goals).length;
   }
   rows.push({ стратегия: name, "прибыль сети": Math.round(t / RUNS), "целей": (g / RUNS).toFixed(1) });
