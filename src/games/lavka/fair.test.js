@@ -150,14 +150,14 @@ test("вердикт: в первую неделю говорит про сбо�
   assert.match(v, /сходится/); assert.match(v, /Сбор 10 ₽/);
 });
 
-test("переход с уровня 1: через capital.js; без медали — null; дочка D = s·e·π̄_эт на 96 дней", () => {
+test("переход с уровня 1: через capital.js; без медали — null; дочка D = s·e·π̄_эт на 84 дня", () => {
   const l1 = L.lavkaNewState();
   assert.equal(F.levelFinish(l1, "sell"), null);
   l1.examBest = { eff: 0.9, medal: "silver", attempts: 1, piBot: 6000 };
   const sold = F.levelFinish(l1, "sell");
   assert.equal(sold.level, 2); assert.equal(sold.fair.cash, K.CAPITAL.grant[2] + Math.round(K.capitalSalePrice(1, "silver")));
   const kept = F.levelFinish(l1, "keep");
-  assert.equal(kept.fair.subsidiaries[0].dividend, Math.round(0.3 * 0.9 * 6000)); assert.equal(kept.fair.subsidiaries[0].daysLeft, 96);
+  assert.equal(kept.fair.subsidiaries[0].dividend, Math.round(0.3 * 0.9 * 6000)); assert.equal(kept.fair.subsidiaries[0].daysLeft, 84);
   const day = F.fairSimulate({ ...kept.fair, q: 467 }, () => 0.5);
   near(day.report.dividend, kept.fair.subsidiaries[0].dividend);
 });

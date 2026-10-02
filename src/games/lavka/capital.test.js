@@ -46,9 +46,9 @@ test("переход: без медали — null; продажа кладёт 
   assert.equal(sold.subsidiary, null);
   const kept = K.capitalTransition(1, ex, "keep", "Лавка");
   assert.equal(kept.cash, K.CAPITAL.grant[2]);
-  assert.equal(kept.subsidiary.dividend, Math.round(0.3 * 0.9 * 6000)); assert.equal(kept.subsidiary.daysLeft, 96);
+  assert.equal(kept.subsidiary.dividend, Math.round(0.3 * 0.9 * 6000)); assert.equal(kept.subsidiary.daysLeft, 84);
   const pay = K.capitalPayDividends([kept.subsidiary, { dividend: 100, daysLeft: 0 }]);
-  assert.equal(pay.dividend, kept.subsidiary.dividend); assert.equal(pay.subsidiaries[0].daysLeft, 95);
+  assert.equal(pay.dividend, kept.subsidiary.dividend); assert.equal(pay.subsidiaries[0].daysLeft, 83);
 });
 
 test("калибровка: π̄_город уровней 2 и 4 — неподвижная точка лимонов на π̄_эт экзамена (≈ 0,908·π̄_эт)", async () => {

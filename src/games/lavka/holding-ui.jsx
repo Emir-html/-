@@ -6,7 +6,7 @@ import { LAVKA_MONO, lavkaRub, lavkaFmt, LAVKA_MEDALS } from "./model.js";
 import {
   HOLDING, HOLDING_GOALS, HOLDING_CHAPTERS,
   holdingNPV, holdingPI, holdingPayback, holdingBoard, holdingApprove, holdingChooseTax, holdingTax, holdingTakeLoan, holdingSchedule, holdingSchedulePV,
-  holdingHedge, holdingInsure, holdingExposure, holdingPolicies, holdingCashForecast, holdingInsuranceCost, holdingMove, holdingDam,
+  holdingHedge, holdingInsure, holdingExposure, holdingPolicies, holdingCashForecast, holdingInsuranceCost, holdingMove, holdingDam, holdingActionGain,
   holdingNextDay, holdingDailyFlow, holdingOffers, holdingSell,
   holdingExamOpen, holdingExamNew, holdingExamPlay, holdingExamResult, holdingExamFinish, levelFinish4,
 } from "./holding.js";
@@ -186,7 +186,7 @@ function HoldingScreen({ st, update }) {
       {!h.taxRegime && day >= HOLDING.tax.fromDay && !levelOver && (
         <LavkaCard>
           <p className="font-semibold">🧾 Налоговый режим холдинга</p>
-          <p className="text-sm mt-1">Доходы за период {rub(HOLDING.tax.R)}, расходы {rub(HOLDING.tax.E)} (E/R = {(HOLDING.tax.E / HOLDING.tax.R).toFixed(2).replace(".", ",")}). Налог платится на 21-й день.</p>
+          <p className="text-sm mt-1">Доходы за период {rub(HOLDING.tax.R)}, расходы {rub(HOLDING.tax.E)} (E/R = {(HOLDING.tax.E / HOLDING.tax.R).toFixed(2).replace(".", ",")}). Налог платится на 21-й день; не выберешь — останешься на УСН 6%.</p>
           <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Граница: 0,06·R = 0,15·(R − E) ⇔ E/R = 60%. В игре налог упрощён: без страховых взносов, НДС и региональных ставок.</p>
           <div className="flex gap-2 mt-2 flex-wrap">
             <button onClick={() => setH((x) => holdingChooseTax(x, "usn6"))} className="text-sm px-3.5 py-2 rounded-full" style={ghost}>УСН 6% доходов</button>
@@ -202,7 +202,7 @@ function HoldingScreen({ st, update }) {
           <p className="font-semibold">🏦 Кредит Марка Ильича: 300 000 на 10 дней под 2%</p>
           <Row l="Аннуитет: платёж ровный" v={`${rub(ann[0])} × 10 = ${rub(ann.reduce((s, x) => s + x, 0))}`} />
           <Row l="Дифференцированный" v={`${rub(dif[0])} → ${rub(dif[9])} = ${rub(dif.reduce((s, x) => s + x, 0))}`} />
-          <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Переплата у дифференцированного меньше — но потому, что долг гасится быстрее. Деньги на счёте приносят те же 2%, поэтому PV платежей обеих схем ровно 300 000 ({rub(holdingSchedulePV(ann))} и {rub(holdingSchedulePV(dif))}). Выбор — по ликвидности: хватит ли денег на первые платежи.</p>
+          <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Переплата у дифференцированного меньше — но потому, что долг гасится быстрее. Деньги на счёте приносят те же 2%, поэтому PV платежей обеих схем ровно 300 000 ({rub(holdingSchedulePV(ann))} и {rub(holdingSchedulePV(dif))}): здесь кредит нейтрален. Схема важна, когда ставка кредита отличается от доходности денег или когда деньги вложены и на первые платежи может не хватить.</p>
           <div className="flex gap-2 mt-2 flex-wrap">
             <button onClick={() => setH((x) => holdingTakeLoan(x, "annuity"))} className="text-sm px-3.5 py-2 rounded-full" style={ghost}>Аннуитет</button>
             <button onClick={() => setH((x) => holdingTakeLoan(x, "diff"))} className="text-sm px-3.5 py-2 rounded-full" style={ghost}>Дифференцированный</button>
@@ -234,7 +234,7 @@ function HoldingScreen({ st, update }) {
               <Row l="Полный полис" v={`${rub(pol.full)} → ожидаемо ${rub(holdingInsuranceCost("full", pol, f))}`} />
               <Row l={`С франшизой 20 000 на объект`} v={`${rub(pol.deductible)} → ожидаемо ${rub(holdingInsuranceCost("deductible", pol, f))}`} />
               <Row l="Без полиса" v={`ожидаемо ${rub(holdingInsuranceCost("none", pol, f))}`} />
-              <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Прогноз кассы к 18-му ≈ {rub(f)}. Если после убытка касса уйдёт в минус — экстренный кредит под 5% в день на 20 дней (по обычной ставке после убытка не дают). Премия с нагрузкой всегда дороже ожидаемого убытка — страховка нужна тому, кого убыток выбивает из кассы.</p>
+              <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Прогноз кассы к 18-му ≈ {rub(f)}. Если 18-го денег не хватит (премия, убыток) — экстренный кредит: 5% в день на 20 дней, по обычной ставке после убытка не дают; в PV он обходится ≈ 0,79 рубля на рубль нехватки. Премия с нагрузкой всегда дороже ожидаемого убытка — страховка нужна тому, кого убыток выбивает из кассы.</p>
             </>); })()}
             <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Марк Ильич: «Рисков почти нет: бизнесы разные». Эдуард: «Вы страхуете два бизнеса от одной реки. Это один риск два раза».</p>
             <div className="flex gap-2 mt-2 flex-wrap">
@@ -255,12 +255,12 @@ function HoldingScreen({ st, update }) {
           <p className="font-semibold">🚩 Красный флаг: Сонная за ночь поднялась на метр</p>
           <p className="text-sm mt-1">После красного флага паводок случается в половине случаев. Страховку уже не продают: «Если бы я продавал полисы тем, кто уже знает, что вода идёт, — у меня были бы только такие клиенты» (неблагоприятный отбор).</p>
           {!h.moved ? (<>
-            <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Поднять запасы наверх — {rub(HOLDING.move.cost)}, убыток −40%. Без флага это было бы лишним: паводка без флага не бывает — в этом ценность информации.</p>
+            <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Поднять запасы наверх — {rub(HOLDING.move.cost)}, убыток −40%. Без флага это было бы лишним: паводка без флага не бывает — в этом ценность информации. Но если убыток покрыт полисом, беречь запасы холдингу незачем (моральный риск — поэтому страховщики и ставят франшизу): ожидаемая выгода для тебя ≈ {rub(holdingActionGain(h, { moved: true }))}.</p>
             <button onClick={() => setH((x) => holdingMove(x))} className="mt-2 text-sm px-3.5 py-2 rounded-full" style={btn}>Перенести запасы</button>
           </>) : <p className="text-xs mt-1">Запасы перенесены.</p>}
           {day >= HOLDING.dam.day && h.damPaid == null && (<>
             <p className="text-sm mt-3 font-semibold">🧱 Мешки с песком: дамба — 20 000 с каждого из шести на Набережной</p>
-            <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Двое платят в любом случае; Семён и ещё двое — если платишь ты. Дамба строится при четырёх взносах и снижает убыток кофеен ещё на 60%. Дамба одна на всех — кто не скинулся, тоже будет сухим. Здесь твой взнос решающий.</p>
+            <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Двое платят в любом случае; Семён и ещё двое — если платишь ты. Дамба строится при четырёх взносах и снижает убыток кофеен ещё на 60%. Дамба одна на всех — кто не скинулся, тоже будет сухим. Здесь твой взнос решающий: платить выгодно, если ожидаемое снижение твоего незастрахованного убытка ({rub(holdingActionGain(h, { damBuilt: true }))}) больше взноса.</p>
             <div className="flex gap-2 mt-2 flex-wrap">
               <button onClick={() => setH((x) => holdingDam(x, true))} className="text-sm px-3.5 py-2 rounded-full" style={btn}>Скинуться 20 000</button>
               <button onClick={() => setH((x) => holdingDam(x, false))} className="text-sm px-3.5 py-2 rounded-full" style={ghost}>Построят и без меня</button>

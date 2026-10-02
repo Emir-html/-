@@ -42,10 +42,10 @@ test("УСН: холдинг (E/R = 0,71) — 15% (78 750 против 108 000);
   near(H.holdingTax({ R: 100000, E: 99500 }, "usn15"), 1000);
 });
 
-test("страховка: касса 250 000 — франшиза (147 000 против 165 000 без полиса); касса 500 000 — не страховать (120 000)", () => {
+test("страховка: касса 250 000 — франшиза (147 000 против ≈ 155 400 без полиса, экстренный кредит в PV ≈ 0,786·S); касса 500 000 — не страховать (120 000)", () => {
   const pol = H.holdingPolicies({ cafes: 150000, factory: 250000 });
   near(pol.full, 150000); near(pol.deductible, 135000);
-  near(H.holdingInsuranceCost("none", pol, 250000), 165000); near(H.holdingInsuranceCost("deductible", pol, 250000), 147000);
+  near(H.holdingInsuranceCost("none", pol, 250000), 0.3 * (400000 + 150000 * H.holdingEmergencyFactor()), 1e-6); near(H.holdingEmergencyFactor(), 1.05 ** 20 / 1.02 ** 20 - 1); near(H.holdingInsuranceCost("deductible", pol, 250000), 147000);
   assert.equal(H.holdingInsuranceBest(pol, 250000), "deductible"); assert.equal(H.holdingInsuranceBest(pol, 500000), "none");
 });
 
@@ -91,7 +91,7 @@ test("паводок: перенос −40%, дамба ещё −60% для к�
   near(loss.payout, (36000 - 20000) + (150000 - 20000)); near(loss.net, 40000);
   const poor = { ...withSubs(H.holdingNewState(10000, 1)), day: 18, world: { flag: true, flood: true, spot: 80 } };
   const out = H.holdingNextDay(poor);
-  assert.ok(out.report.emergency > 0); assert.equal(out.next.cash, 0); near(out.next.emergencyDebt, out.report.emergency * 2);
+  assert.ok(out.report.emergency > 0); assert.equal(out.next.cash, 0); near(out.next.emergencyDebt, out.report.emergency * 1.05 ** 20, 1e-6);
   assert.equal(H.holdingMove({ ...withSubs(H.holdingNewState(1e5, 1)), day: 15, world: { flag: false, flood: false, spot: 80 } }).moved, false, "без флага переносить незачем — и нельзя");
 });
 
@@ -99,8 +99,8 @@ test("цель «Кому нужна страховка»: по прогнозу
   const rich = { ...withSubs(H.holdingNewState(900000, 2)), day: 10 };
   const r1 = H.holdingInsure(rich, "none");
   assert.equal(r1.insurance.best, "none"); assert.ok(r1.goals.insurance);
-  /* Касса покрывает премию, но не убыток (≈ 250 000 к паводку) — страховка с франшизой выгоднее. */
-  const mid = { ...withSubs(H.holdingNewState(220000, 2)), day: 10 };
+  /* Касса покрывает премию, но не убыток (≈ 200 000 к паводку) — страховка с франшизой выгоднее. */
+  const mid = { ...withSubs(H.holdingNewState(150000, 2)), day: 10 };
   const r2 = H.holdingInsure(mid, "none");
   assert.equal(r2.insurance.best, "deductible"); assert.ok(!r2.goals.insurance);
   /* Касса не покрывает даже премию — полис пришлось бы оплачивать экстренным кредитом: не страховать дешевле. */
@@ -139,9 +139,44 @@ test("переход с уровня 4 через capital.js: фонд разв�
   assert.equal(H.levelFinish4({ level: 4, factory: f }, "sell"), null);
   f.examBest = { eff: 0.92, medal: "silver", piBot: 6000, attempts: 1 };
   const kept = H.levelFinish4({ level: 4, factory: f, fair: { flags: { semyonBroken: true } } }, "keep");
-  assert.equal(kept.level, 5); assert.equal(kept.holding.subsidiaries.length, 2); assert.equal(kept.holding.subsidiaries[1].daysLeft, 24);
+  assert.equal(kept.level, 5); assert.equal(kept.holding.subsidiaries.length, 2); assert.equal(kept.holding.subsidiaries[1].daysLeft, 21);
   assert.equal(kept.holding.cash, H.HOLDING.devFund); assert.equal(kept.holding.semyonTrust, false);
   assert.ok(!H.holdingBoard({ ...kept.holding, day: 5 }).some((p) => p.id === "P3"));
   const sold = H.levelFinish4({ level: 4, factory: f }, "sell");
   assert.equal(sold.holding.cash, H.HOLDING.devFund + Math.round(K.capitalSalePrice(4, "silver")));
+});
+
+test("итог игры выигрывается экономикой: «ленивый» холдинг (без проектов, полиса и выбора налога, Плотникову) беднее «умного»", () => {
+  const subs = [{ name: "Лавка", level: 1, dividend: 1300, daysLeft: 21 }, { name: "Квас", level: 2, dividend: 1700, daysLeft: 21 }, { name: "Сеть", level: 3, dividend: 1300, daysLeft: 21 }, { name: "Цех", level: 4, dividend: 4000, daysLeft: 21 }];
+  const play = (seed, smart) => {
+    let h = { ...H.holdingNewState(500000, seed), subsidiaries: subs.map((x) => ({ ...x })) };
+    for (let d = 1; d <= 21; d++) {
+      if (smart) {
+        if (d === 5) h = H.holdingApprove(h, H.holdingBestSet(H.holdingBoard(h), 500000).ids);
+        if (d === 6) h = H.holdingChooseTax(h, "usn15");
+        if (d === 10) h = H.holdingInsure(h, H.holdingInsuranceBest(H.holdingPolicies(H.holdingExposure(h)), H.holdingCashForecast(h)));
+        if (d === 15 && h.world.flag && H.holdingActionGain(h, { moved: true }) > 10000) h = H.holdingMove(h);
+        if (d === 16 && h.world.flag) h = H.holdingDam(h, H.holdingActionGain(h, { damBuilt: true }) > 20000);
+      }
+      h = H.holdingNextDay(h).next;
+    }
+    h = { ...h, examBest: { medal: "gold", eff: 1 } };
+    const o = H.holdingOffers(h, "gold");
+    return H.holdingSell(h, smart && o.zheleznova > o.plotnikov ? "zheleznova" : "plotnikov").finalCapital;
+  };
+  let lazy = 0, smart = 0;
+  for (let s = 1; s <= 40; s++) { lazy += play(s, false); smart += play(s, true); }
+  assert.ok(smart > lazy * 1.2, `умный ${smart / 40} против ленивого ${lazy / 40}`);
+});
+
+test("налог без выбора — УСН 6%; перенос и дамба не засчитываются, если полный полис уже покрывает убыток", () => {
+  const h = { ...withSubs(H.holdingNewState(5e5, 1)), day: 21 };
+  near(H.holdingNextDay(h).report.tax, 108000);
+  let ins = H.holdingInsure({ ...withSubs(H.holdingNewState(5e5, 1)), day: 10 }, "full");
+  ins = { ...ins, day: 15, world: { flag: true, flood: true, spot: 80 } };
+  near(H.holdingActionGain(ins, { moved: true }), 0);
+  assert.ok(!H.holdingMove(ins).goals.flag);
+  const bare = { ...withSubs(H.holdingNewState(5e5, 1)), day: 15, world: { flag: true, flood: true, spot: 80 }, insurance: { choice: "none" } };
+  near(H.holdingActionGain(bare, { moved: true }), 0.5 * 0.4 * 400000);
+  assert.ok(H.holdingMove(bare).goals.flag);
 });

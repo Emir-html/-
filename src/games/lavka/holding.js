@@ -34,10 +34,11 @@ const HOLDING = {
   losses: { cafes: 150000, factory: 250000 },
   flagDay: 15, pFlag: 0.6, pFloodIfFlag: 0.5, floodDay: 18,
   move: { cost: 10000, cut: 0.4 }, dam: { fee: 20000, cut: 0.6, day: 16 },
-  emergency: { rate: 0.05, days: 20 },
-  /* Средний «эффективный» дневной поток продающих холдингов: истинная стоимость/a(30). Типичный холдинг к продаже —
-     дочки ≈ 5 000 ₽/день и проекты с ≈ 12 днями потока: ≈ 17 700; лимоны — × 0,908 (как в capital.js). До калибровки. */
-  cityD: 16000,
+  emergency: { rate: 0.05, days: 20, dueDay: 38 }, // сложные 5% в день, вернуть через 20 дней после паводка (18 + 20)
+  /* «Рынок лимонов» финала: медаль экзамена не зависит от того, насколько хорош сам холдинг, поэтому Плотникову продают
+     те, кому хуже не будет, — рынок разворачивается к низу: к холдингу без проектов, из одних дочек (≈ 5 000 ₽/день).
+     Проверка — тест «ленивый не обгоняет умного» (holding.test.js). */
+  cityD: 5000,
 };
 
 /* ===== Финансовая математика ===== */
@@ -84,8 +85,10 @@ function holdingPolicies(ex, p = HOLDING.insurance.p, load = HOLDING.insurance.l
   const objs = Object.values(ex).filter((x) => x > 0), loss = objs.reduce((s, x) => s + x, 0);
   return { loss, full: load * p * loss, deductible: load * p * objs.reduce((s, x) => s + Math.max(0, x - ded), 0), dedTotal: objs.length * ded, objects: objs.length };
 }
-/* Издержки экстренного кредита на нехватку S: простые 5% в день на 20 дней = S (сверх возврата самого долга). */
-const holdingEmergencyCost = (S, e = HOLDING.emergency) => Math.max(0, S) * e.rate * e.days;
+/* Издержки экстренного кредита на нехватку S в PV дня займа: вернуть S·1,05²⁰ через 20 дней, а деньги стоят 2% в день —
+   S·(1,05²⁰/1,02²⁰ − 1) ≈ 0,786·S сверх самого долга. */
+const holdingEmergencyFactor = (e = HOLDING.emergency, r = HOLDING.rate) => (1 + e.rate) ** e.days / (1 + r) ** e.days - 1;
+const holdingEmergencyCost = (S, e = HOLDING.emergency) => Math.max(0, S) * holdingEmergencyFactor(e);
 /* Ожидаемые издержки варианта страховки, если в день паводка в кассе cash (премия платится в тот же день). */
 function holdingInsuranceCost(choice, { loss, full, deductible, dedTotal }, cash, p = HOLDING.insurance.p) {
   const paid = choice === "full" ? full : choice === "deductible" ? deductible : 0;
@@ -173,19 +176,29 @@ function holdingInsure(h, choice) {
   if (right && !goals.insurance) { goals.insurance = h.day; cash += HOLDING_GOALS[2].reward; }
   return { ...h, cash, goals, insurance: { choice, best, forecast, costs, right, premium: choice === "full" ? pol.full : choice === "deductible" ? pol.deductible : 0 } };
 }
-/* После красного флага: перенести запасы (только когда флаг есть). */
+/* Ожидаемая выгода действия после флага (паводок с вероятностью pFloodIfFlag): насколько оно снижает НЕЗАСТРАХОВАННЫЙ
+   убыток холдинга. С полным полисом убыток и так покрыт (моральный риск: застрахованному беречь запасы незачем —
+   поэтому и существует франшиза); если у реки ничего нет — выгоды нет. */
+function holdingActionGain(h, change) {
+  const p = HOLDING.pFloodIfFlag, before = holdingFloodLoss(h).net, after = holdingFloodLoss({ ...h, ...change }).net;
+  return p * (before - after);
+}
+/* После красного флага: перенести запасы (только когда флаг есть). Цель — если это выгодно по ожиданию. */
 function holdingMove(h) {
   if (h.moved || !h.world.flag || h.day < HOLDING.flagDay || h.day >= HOLDING.floodDay) return h;
+  const gain = holdingActionGain(h, { moved: true });
   const goals = { ...h.goals }; let cash = h.cash - HOLDING.move.cost;
-  if (!goals.flag) { goals.flag = h.day; cash += HOLDING_GOALS[3].reward; }
-  return { ...h, cash, goals, moved: true };
+  if (gain > HOLDING.move.cost && !goals.flag) { goals.flag = h.day; cash += HOLDING_GOALS[3].reward; }
+  return { ...h, cash, goals, moved: true, moveGain: gain };
 }
-/* Складчина на дамбу (после флага): двое платят всегда, Семён и ещё двое — если платит герой; строится при ≥ 4 взносах. */
+/* Складчина на дамбу (после флага): двое платят всегда, Семён и ещё двое — если платит герой; строится при ≥ 4 взносах.
+   Взнос героя решающий; цель — если ожидаемое снижение незастрахованного убытка больше взноса. */
 function holdingDam(h, pay) {
   if (h.damPaid != null || !h.world.flag || h.day < HOLDING.dam.day || h.day >= HOLDING.floodDay) return h;
+  const gain = holdingActionGain(h, { damBuilt: true });
   const goals = { ...h.goals }; let cash = h.cash - (pay ? HOLDING.dam.fee : 0);
-  if (pay && !goals.dam) { goals.dam = h.day; cash += HOLDING_GOALS[4].reward; }
-  return { ...h, cash, goals, damPaid: !!pay, damBuilt: !!pay };
+  if (pay && gain > HOLDING.dam.fee && !goals.dam) { goals.dam = h.day; cash += HOLDING_GOALS[4].reward; }
+  return { ...h, cash, goals, damPaid: !!pay, damBuilt: !!pay, damGain: gain };
 }
 /* Убыток паводка по объектам с учётом переноса запасов, дамбы и страховки. */
 function holdingFloodLoss(h) {
@@ -206,12 +219,13 @@ function holdingNextDay(h) {
   const interest = h.cash * HOLDING.rate;
   let events = [], fx = 0, tax = 0, premium = 0, flood = null, emergency = 0;
   if (day === HOLDING.fx.payDay) { const rate = h.hedged ? HOLDING.fx.forward : h.world.spot; fx = HOLDING.fx.usd * rate; events.push("fx"); }
-  if (day === HOLDING.tax.payDay && h.taxRegime) { tax = holdingTax(HOLDING.tax, h.taxRegime); events.push("tax"); }
+  /* Режим не выбран — УСН 6% «доходы» (так и в жизни без заявления о переходе на 15%). */
+  if (day === HOLDING.tax.payDay) { tax = holdingTax(HOLDING.tax, h.taxRegime || "usn6"); events.push("tax"); }
   if (day === HOLDING.floodDay && h.insurance && h.insurance.premium) premium = h.insurance.premium;
   if (day === HOLDING.floodDay && h.world.flood) { flood = holdingFloodLoss(h); events.push("flood"); }
   let cash = h.cash + pay.dividend + projectCF - loanPay + interest - fx - tax - premium - (flood ? flood.net : 0);
   let emergencyDebt = h.emergencyDebt || 0;
-  if (day === HOLDING.floodDay && cash < 0) { emergency = -cash; emergencyDebt += emergency * (1 + HOLDING.emergency.rate * HOLDING.emergency.days); cash = 0; events.push("emergency"); }
+  if (day === HOLDING.floodDay && cash < 0) { emergency = -cash; emergencyDebt += emergency * (1 + HOLDING.emergency.rate) ** HOLDING.emergency.days; cash = 0; events.push("emergency"); }
   const nd = day + 1;
   let chapter = h.chapter, newChapter = null;
   const up = HOLDING_CHAPTERS[chapter];
@@ -226,11 +240,11 @@ function holdingNextDay(h) {
 /* Дневной поток холдинга (дивиденды дочек + проекты) — то, что покупатель получает. */
 const holdingDailyFlow = (h) => (h.subsidiaries || []).filter((s) => s.daysLeft > 0).reduce((s, x) => s + x.dividend, 0)
   + (h.projects || []).filter((p) => p.daysLeft > 0).reduce((s, p) => s + p.cf, 0);
-/* Истинная стоимость холдинга для покупателя: дочки — a(30) дневных дивидендов (как в capital.js), проекты — PV
-   оставшихся дней; минус невозвращённый экстренный кредит (к сроку). */
+/* Истинная стоимость холдинга для покупателя: дочки — a(30) дневных дивидендов (как в capital.js; если у дочки остались
+   дни выплат — ещё их PV), проекты — PV оставшихся дней. Экстренный долг вычитается при продаже (holdingSell). */
 function holdingTrueValue(h) {
   const r = HOLDING.rate;
-  const subs = (h.subsidiaries || []).reduce((s, x) => s + x.dividend * annuity(CAPITAL.terminalDays, r), 0);
+  const subs = (h.subsidiaries || []).reduce((s, x) => s + x.dividend * (annuity(Math.max(0, x.daysLeft), r) + annuity(CAPITAL.terminalDays, r) / (1 + r) ** Math.max(0, x.daysLeft)), 0);
   const proj = (h.projects || []).reduce((s, p) => s + p.cf * annuity(p.daysLeft, r), 0);
   return subs + proj;
 }
@@ -243,7 +257,8 @@ function holdingSell(h, buyer) {
   const medal = h.examBest && h.examBest.medal;
   if (!medal || h.sold) return h;
   const o = holdingOffers(h, medal), price = buyer === "zheleznova" ? o.zheleznova : o.plotnikov;
-  const debt = h.emergencyDebt || 0;
+  /* Экстренный долг возвращается к 38-му дню: в день продажи он стоит PV по ставке 2%. */
+  const debt = (h.emergencyDebt || 0) / (1 + HOLDING.rate) ** Math.max(0, HOLDING.emergency.dueDay - h.day);
   return { ...h, sold: { buyer, price: Math.round(price), offers: o, day: h.day }, cash: Math.round(h.cash + price - debt), emergencyDebt: 0,
     finalCapital: Math.round(h.cash + price - debt) };
 }
@@ -299,7 +314,14 @@ function holdingExamScore(d, ans) {
     const best = holdingBestSet(d.projects, d.budget).npv, npv = set.reduce((s, p) => s + holdingNPV(p), 0);
     return best <= 0 ? (set.length ? 0 : 1) : Math.max(0, Math.min(1, npv / best));
   }
-  if (d.kind === "finance") { const b = holdingExamBest(d); return holdingFinanceCost(d, b) / holdingFinanceCost(d, ans); }
+  if (d.kind === "finance") {
+    /* Доля лишних издержек — отдельно по схеме кредита и по налогу (иначе сумма кредита в знаменателе всё сглаживает). */
+    const loanCost = (sch) => holdingFinanceCost(d, { scheme: sch, regime: "usn6" }) - holdingTax(d.tax, "usn6");
+    const part = (mine, all) => { const lo = Math.min(...all), hi = Math.max(...all); return hi - lo < 1e-6 ? 1 : 1 - (mine - lo) / (hi - lo); };
+    const sch = part(loanCost(ans.scheme), ["annuity", "diff"].map(loanCost));
+    const tax = part(holdingTax(d.tax, ans.regime), ["usn6", "usn15"].map((r) => holdingTax(d.tax, r)));
+    return 0.5 * sch + 0.5 * tax;
+  }
   const pol = holdingPolicies(d.ex), b = holdingExamBest(d);
   return holdingInsuranceCost(b.choice, pol, d.cash, d.p) / holdingInsuranceCost(ans.choice, pol, d.cash, d.p);
 }
@@ -335,7 +357,7 @@ function levelFinish4(st, choice) {
 export {
   HOLDING, HOLDING_GOALS, HOLDING_CHAPTERS, HOLDING_EXAM_KINDS,
   holdingPV, holdingNPV, holdingPI, holdingPayback, holdingBestSet, holdingGreedyPI, holdingSchedule, holdingSchedulePV, holdingTax, holdingTaxBest,
-  holdingExposure, holdingPolicies, holdingEmergencyCost, holdingInsuranceCost, holdingInsuranceBest,
+  holdingExposure, holdingPolicies, holdingEmergencyFactor, holdingEmergencyCost, holdingActionGain, holdingInsuranceCost, holdingInsuranceBest,
   holdingNewState, holdingBoard, holdingApprove, holdingChooseTax, holdingTakeLoan, holdingHedge, holdingCashForecast, holdingInsure,
   holdingMove, holdingDam, holdingFloodLoss, holdingNextDay, holdingDailyFlow, holdingTrueValue, holdingOffers, holdingSell,
   holdingExamOpen, holdingExamNew, holdingFinanceCost, holdingExamBest, holdingExamScore, holdingExamPlay, holdingExamResult, holdingExamFinish,

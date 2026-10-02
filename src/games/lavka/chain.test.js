@@ -138,7 +138,7 @@ test("переход с уровня 2 через capital.js; дочки коп�
   f.examBest = { eff: 0.9, medal: "silver", piBot: 5000, attempts: 1 };
   const kept = C.levelFinish2({ level: 2, fair: f }, "keep");
   assert.equal(kept.level, 3); assert.equal(kept.chain.subsidiaries.length, 2);
-  assert.equal(kept.chain.subsidiaries[1].dividend, Math.round(0.3 * 0.9 * 5000)); assert.equal(kept.chain.subsidiaries[1].daysLeft, 72);
+  assert.equal(kept.chain.subsidiaries[1].dividend, Math.round(0.3 * 0.9 * 5000)); assert.equal(kept.chain.subsidiaries[1].daysLeft, 63);
   const sold = C.levelFinish2({ level: 2, fair: f }, "sell");
   assert.equal(sold.chain.cash, K.CAPITAL.grant[3] + Math.round(K.capitalSalePrice(2, "silver")));
 });

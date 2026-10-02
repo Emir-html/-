@@ -132,7 +132,7 @@ test("переход с уровня 3 через capital.js; дочки коп�
   assert.equal(P.levelFinish3({ level: 3, chain: c }, "sell"), null);
   const chain = { ...c, examBest: { eff: 0.9, medal: "silver", piBot: 3000, attempts: 1 }, subsidiaries: [{ name: "Ярмарка", dividend: 1500, daysLeft: 40 }] };
   const kept = P.levelFinish3({ level: 3, chain }, "keep");
-  assert.equal(kept.level, 4); assert.equal(kept.factory.subsidiaries.length, 2); assert.equal(kept.factory.subsidiaries[1].daysLeft, 48);
+  assert.equal(kept.level, 4); assert.equal(kept.factory.subsidiaries.length, 2); assert.equal(kept.factory.subsidiaries[1].daysLeft, 42);
   const sold = P.levelFinish3({ level: 3, chain }, "sell");
   assert.equal(sold.factory.cash, K.CAPITAL.grant[4] + Math.round(K.capitalSalePrice(3, "silver")));
 });

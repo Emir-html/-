@@ -178,7 +178,7 @@ function factoryExamNew(f, seed) {
     /* МРОТ: обычно между w_m и MRP(L_m) — занятость растёт; иногда выше MRP(L_m) — занятость ниже монопсонической. */
     /* МРОТ всегда заметно связывает (|L − L_m| ≥ max(2, 15%·L_m)): берём случайно из подходящих значений (шаг 50);
        обычный — между w_m и MRP(L_m) (занятость растёт), высокий (30%) — выше MRP(L_m) (занятость падает). */
-    const okF = (f) => { const Lf = factoryBestL({ p, c, d, floor: f }); return Lf >= 5 && Math.abs(Lf - Lm) >= Math.max(2, 0.15 * Lm); };
+    const okF = (f) => { const Lf = factoryBestL({ p, c, d, floor: f }); return Lf >= 8 && Math.abs(Lf - Lm) >= Math.max(2, 0.15 * Lm); };
     const normal = [], highs = [];
     for (let f = Math.ceil(wm / 50) * 50 + 50; f < mrpLm; f += 50) if (okF(f)) normal.push(f);
     for (let f = Math.ceil(mrpLm / 50) * 50 + 50; f <= mrpLm + 1500; f += 50) if (okF(f)) highs.push(f);
@@ -191,7 +191,7 @@ function factoryExamNew(f, seed) {
   });
   return { seed, results: [], days };
 }
-/* Маржа дня экзамена: найм; в дне «котёл» — минус дневной эквивалент PV выбранного варианта. */
+/* Маржа дня экзамена — маржа найма p·Q − w·L (котёл оценивается отдельным множителем в factoryExamPlayDay). */
 function factoryExamMargin(d, ans) {
   const L = Math.max(0, Math.round(ans.L || 0));
   let m = factoryLaborMargin(L, d);
