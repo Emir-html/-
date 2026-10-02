@@ -84,3 +84,27 @@ test("переход с уровня 3: только с медалью экза�
   const sold = P.levelFinish3(st, "sell");
   assert.equal(sold.factory.cash, P.FACTORY.grant + Math.round(P.factorySalePrice3("silver")));
 });
+
+/* ===== Экзамен уровня 4 ===== */
+
+test("экзамен уровня 4: 4 задачи со случайными параметрами; оптимум 100%; «всегда 20, всегда арендую» — без серебра", () => {
+  const f = { ...P.factoryNewState(1e5), day: 22, chapter: 3 };
+  assert.equal(P.factoryExamOpen(f), true);
+  const e = P.factoryExamNew(f, 11);
+  assert.deepEqual(e.days.map((d) => d.kind), ["competitive", "monopsony", "minwage", "oven"]);
+  assert.deepEqual(e.days, P.factoryExamNew(f, 11).days);
+  const run = (pick, seed) => { let ex = P.factoryExamNew(f, seed); for (let i = 0; i < 4; i++) ex = P.factoryExamPlayDay(f, ex, pick(ex.days[i])).exam; return P.factoryExamResult(ex); };
+  const best = run((d) => P.factoryExamBest(d), 11);
+  near(best.eff, 1, 1e-9); assert.equal(best.medal.id, "gold");
+  let silver = 0, highWage = 0;
+  for (let s = 0; s < 40; s++) {
+    const ex = P.factoryExamNew(f, 200 + s);
+    if (ex.days[2].wMin > P.factoryExamCompW(ex.days[2])) highWage++;
+    const r = run(() => ({ L: 20, buy: false }), 200 + s);
+    if (r.medal && r.medal.id !== "bronze") silver++;
+  }
+  assert.ok(silver === 0, `серебро в ${silver} из 40`);
+  assert.ok(highWage > 0, "иногда МРОТ выше конкурентной зарплаты — занятость падает");
+  const after = P.factoryExamFinish(f, { ...e, results: [] });
+  assert.equal(after.cash, f.cash);
+});

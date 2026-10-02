@@ -127,6 +127,66 @@ function factoryVerdict(r) {
   return parts.join(" ");
 }
 
+/* ===== Экзамен уровня 4 =====
+   4 задачи на копии пекарни (касса не меняется), параметры случайны. Оценка — по решениям:
+   найм — 1 − (|L − L*| − 0,5)/L*; печь — верное решение по NPV (1 или 0). Медали — как на уровнях 1–3. */
+const factoryExamOpen = (f) => (f.chapter || 1) >= 3 && f.day >= 22;
+/* Конкурентная зарплата задачи (MRP = w(L) на кривой предложения). */
+function factoryExamCompW(d) {
+  const L = (d.P * FACTORY.a - d.c) / (2 * FACTORY.b * d.P + d.d);
+  return d.c + d.d * L;
+}
+function factoryExamNew(f, seed) {
+  const rng = lavkaRng(seed), pick = (lo, hi) => lo + Math.floor(rng() * (hi - lo + 1));
+  const P1 = pick(90, 120), w1 = pick(16, 26) * 100;
+  const comp = { kind: "competitive", title: "Рынок труда", P: P1, w: w1,
+    text: `Пирожок стоит ${P1} ₽, зарплата на рынке ${w1} ₽. MPL = 40 − L. Сколько нанять?` };
+  const P2 = pick(90, 110), c2 = pick(3, 7) * 100, d2 = pick(6, 9) * 10;
+  const mono = { kind: "monopsony", title: "Монопсония", P: P2, c: c2, d: d2,
+    text: `Ты единственный работодатель: чтобы нанять L человек, платишь каждому w = ${c2} + ${d2}·L. Пирожок ${P2} ₽, MPL = 40 − L. Сколько нанять?` };
+  const P3 = pick(95, 105), c3 = 500, d3 = 75;
+  const base = { P: P3, c: c3, d: d3 }, wComp = factoryExamCompW(base);
+  const wMin = pick(0, 3) === 0 ? Math.round(wComp / 100 + 3) * 100 : pick(16, 19) * 100;
+  const minw = { kind: "minwage", title: "МРОТ", ...base, wMin,
+    text: `Ты единственный работодатель: w = ${c3} + ${d3}·L, но введён МРОТ ${wMin} ₽. Пирожок ${P3} ₽, MPL = 40 − L. Сколько нанять?` };
+  const rent = pick(15, 25) * 100, price = pick(6, 12) * 10000, salvage = pick(0, 4) * 5000;
+  const oven = { kind: "oven", title: "Печь", rent, price, salvage,
+    text: `Аренда печи ${rent} ₽/день или покупка за ${price} ₽ с продажей через 60 дней за ${salvage} ₽. Ставка r = 0,5% в день. Купить?` };
+  return { seed, results: [], days: [comp, mono, minw, oven] };
+}
+function factoryExamBest(d) {
+  const { a, b } = FACTORY;
+  if (d.kind === "competitive") return { L: Math.max(0, (a - d.w / d.P) / (2 * b)) };
+  if (d.kind === "monopsony") return { L: Math.max(0, (d.P * a - d.c) / (2 * b * d.P + 2 * d.d)) };
+  if (d.kind === "minwage") {
+    const Lm = (d.P * a - d.c) / (2 * b * d.P + 2 * d.d), wm = d.c + d.d * Lm;
+    if (d.wMin <= wm) return { L: Lm };
+    return { L: Math.min((d.wMin - d.c) / d.d, Math.max(0, (a - d.wMin / d.P) / (2 * b))) };
+  }
+  const r = FACTORY.rate, N = FACTORY.ovenDays;
+  return { buy: d.price - d.salvage / (1 + r) ** N < (d.rent * (1 - (1 + r) ** -N)) / r };
+}
+function factoryExamPlayDay(f, exam, ans) {
+  const i = exam.results.length, d = exam.days[i], best = factoryExamBest(d);
+  let score;
+  if (d.kind === "oven") score = ans.buy === best.buy ? 1 : 0;
+  else { const L = Math.max(0, Math.round(ans.L || 0)); score = Math.max(0, 1 - Math.max(0, Math.abs(L - best.L) - 0.5) / Math.max(1, best.L)); }
+  const res = { ans, best, score };
+  return { exam: { ...exam, results: [...exam.results, res] }, result: res, done: i + 1 === exam.days.length };
+}
+function factoryExamResult(exam) {
+  if (!exam.results.length) return null;
+  const days = exam.results.map((r) => r.score);
+  const eff = days.reduce((x, y) => x + y, 0) / days.length, minDay = Math.min(...days);
+  return { eff, minDay, days, medal: lavkaExamMedal(eff, minDay) };
+}
+function factoryExamFinish(f, exam) {
+  const res = factoryExamResult(exam), prev = f.examBest || { eff: -Infinity, medal: null, attempts: 0 };
+  const better = !!res && res.eff > prev.eff;
+  return { ...f, examActive: null, examBest: { eff: better ? res.eff : prev.eff, medal: better ? (res.medal ? res.medal.id : null) : prev.medal,
+    day: better ? f.day : prev.day, attempts: (prev.attempts || 0) + 1 } };
+}
+
 /* Завершить уровень 3 (нужна медаль экзамена сети): продать сеть или оставить дочкой; дочки копятся. */
 function levelFinish3(st, choice) {
   const medal = st.chain && st.chain.examBest && st.chain.examBest.medal;
@@ -139,6 +199,7 @@ function levelFinish3(st, choice) {
 }
 
 export {
+  factoryExamOpen, factoryExamCompW, factoryExamNew, factoryExamBest, factoryExamPlayDay, factoryExamResult, factoryExamFinish,
   FACTORY, LEVEL3_DIVIDEND, FACTORY_GOALS, FACTORY_CHAPTERS,
   factoryQ, factoryMPL, factoryMRP, factorySupplyW, factoryMRC, factoryCompetitiveEq, factoryLabor, factoryOvenMath,
   factorySalePrice3, factoryNewState, factoryBuyOven, factoryMarket, factoryWage, factoryMarginalLaborCost,

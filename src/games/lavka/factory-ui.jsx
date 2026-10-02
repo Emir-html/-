@@ -7,6 +7,7 @@ import {
   FACTORY, FACTORY_GOALS, FACTORY_CHAPTERS, LEVEL3_DIVIDEND,
   factoryQ, factoryMPL, factoryMRP, factoryWage, factoryMarginalLaborCost, factoryOvenMath, factorySalePrice3,
   factoryBuyOven, factorySimulate, factoryVerdict, levelFinish3,
+  factoryExamOpen, factoryExamNew, factoryExamPlayDay, factoryExamResult, factoryExamFinish,
 } from "./factory.js";
 import { LavkaStepper, LavkaAwning, LavkaCard } from "./components.jsx";
 
@@ -39,6 +40,63 @@ function LevelFinish3Card({ st, update }) {
   );
 }
 
+/* Экзамен уровня 4: найм на трёх рынках труда и печь по NPV. */
+function FactoryExam({ f, setF }) {
+  const exam = f.examActive;
+  const [L, setL] = useState(15);
+  const [buy, setBuy] = useState(null);
+  const i = exam.results.length, done = i >= exam.days.length;
+  const head = (
+    <LavkaCard tint={COLORS.blueSoft}>
+      <p className="font-semibold">🎓 Экзамен уровня 4{done ? " — итог" : ` · задача ${i + 1} из ${exam.days.length}`}</p>
+      <p className="text-sm mt-1">Рынок труда, монопсония, МРОТ, печь. Оценка — по решениям: насколько найм близок к оптимальному и верно ли решение о печи. Касса не меняется.</p>
+    </LavkaCard>
+  );
+  if (done) {
+    const res = factoryExamResult(exam), medal = res && res.medal;
+    return (
+      <div className="ms-rise">
+        {head}
+        <LavkaCard tint={medal ? COLORS.sageSoft : COLORS.rustSoft}>
+          <p className="text-3xl" style={{ fontFamily: LAVKA_MONO, fontWeight: 700 }}>{Math.round(res.eff * 100)}%</p>
+          <p className="text-base mt-1 font-semibold">{medal ? `${medal.emoji} ${medal.title}` : "Без медали"}</p>
+          {exam.days.map((d, k) => {
+            const r = exam.results[k];
+            return (
+              <div key={k} className="text-sm py-1.5" style={{ borderTop: `1px solid ${COLORS.line}` }}>
+                <div className="flex justify-between gap-2"><span>{k + 1}. {d.title}</span><span style={{ fontFamily: LAVKA_MONO }}>{Math.round(res.days[k] * 100)}%</span></div>
+                <p className="text-xs" style={{ color: COLORS.inkSoft }}>{d.kind === "oven" ? `ты: ${r.ans.buy ? "купить" : "арендовать"}, верно: ${r.best.buy ? "купить" : "арендовать"}` : `ты: ${r.ans.L}, оптимум ≈ ${r.best.L.toFixed(1)}`}</p>
+              </div>
+            );
+          })}
+        </LavkaCard>
+        <button onClick={() => setF((x) => factoryExamFinish(x, x.examActive))} className="w-full py-3.5 rounded-full text-base" style={{ background: COLORS.onyx, color: COLORS.onyxText, fontWeight: 700 }}>Вернуться в пекарню</button>
+      </div>
+    );
+  }
+  const d = exam.days[i];
+  return (
+    <div>
+      {head}
+      <LavkaCard tint={COLORS.amberSoft}><p className="font-semibold">Задача {i + 1}: {d.title}</p><p className="text-sm mt-1">{d.text}</p></LavkaCard>
+      {d.kind === "oven" ? (
+        <LavkaCard>
+          <div className="flex gap-2">
+            {[[true, "Купить"], [false, "Арендовать"]].map(([v, l]) => (
+              <button key={l} onClick={() => setBuy(v)} className="text-sm px-4 py-2 rounded-full" style={{ background: buy === v ? COLORS.onyx : COLORS.surfaceSolid, color: buy === v ? COLORS.onyxText : COLORS.ink, border: `1px solid ${COLORS.line}` }}>{l}</button>
+            ))}
+          </div>
+        </LavkaCard>
+      ) : (
+        <LavkaCard><p className="font-semibold">Сколько нанять</p><div className="mt-2"><LavkaStepper value={L} onChange={setL} min={0} max={40} suffix=" чел." /></div></LavkaCard>
+      )}
+      <button disabled={d.kind === "oven" && buy == null} onClick={() => { const out = factoryExamPlayDay(f, exam, d.kind === "oven" ? { buy } : { L }); setF((x) => ({ ...x, examActive: out.exam })); setBuy(null); window.scrollTo?.(0, 0); }}
+        className="w-full py-3.5 rounded-full text-base" style={{ background: COLORS.onyx, color: COLORS.onyxText, fontWeight: 700, opacity: d.kind === "oven" && buy == null ? 0.5 : 1 }}>Ответить · {i + 1} из {exam.days.length}</button>
+      <button onClick={() => setF((x) => ({ ...x, examActive: null }))} className="w-full py-2.5 rounded-full text-sm mt-2" style={{ border: `1px solid ${COLORS.line}`, color: COLORS.inkSoft }}>Прервать экзамен (не засчитается)</button>
+    </div>
+  );
+}
+
 function FactoryScreen({ st, update }) {
   const f = st.factory;
   const [tab, setTab] = useState("bakery");
@@ -50,6 +108,12 @@ function FactoryScreen({ st, update }) {
   const Line = ({ l, v }) => <div className="flex justify-between text-sm py-0.5"><span>{l}</span><span style={{ fontFamily: LAVKA_MONO }}>{v}</span></div>;
   const open = () => { const out = factorySimulate(f, Math.random); setRep(out.report); update((s) => ({ ...s, factory: out.next })); window.scrollTo?.(0, 0); };
   const tabs = [["bakery", "Пекарня"], ["goals", "Цели"]];
+  if (f.examActive) return (
+    <div>
+      <LavkaAwning title="Своё производство" sub={`Уровень 4 · экзамен · на счёте ${lavkaRub(f.cash)}`} />
+      <FactoryExam f={f} setF={setF} />
+    </div>
+  );
   return (
     <div>
       <LavkaAwning title="Своё производство" sub={`Уровень 4 · глава ${f.chapter} «${ch.title}» · день ${f.day} · на счёте ${lavkaRub(f.cash)}${dividends ? ` · дочки +${lavkaFmt(dividends)} ₽/день` : ""}`} />
@@ -75,6 +139,15 @@ function FactoryScreen({ st, update }) {
               {rep.newGoals.map((id) => { const g = FACTORY_GOALS.find((x) => x.id === id); return <p key={id} className="text-sm mt-1 font-semibold">{g.emoji} Цель: {g.title} (+{lavkaFmt(g.reward)} ₽)</p>; })}
             </LavkaCard>
           )}
+          {factoryExamOpen(f) && (
+            <LavkaCard tint={COLORS.blueSoft}>
+              <p className="font-semibold">🎓 Экзамен уровня 4 открыт</p>
+              <p className="text-sm mt-1">Найм на трёх рынках труда и решение о печи; параметры каждый раз новые. Касса не меняется.</p>
+              {f.examBest && <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Лучший результат: {Math.round(f.examBest.eff * 100)}%{f.examBest.medal ? " " + LAVKA_MEDALS.find((m) => m.id === f.examBest.medal).emoji : ""} · попыток {f.examBest.attempts}</p>}
+              <button onClick={() => setF((x) => ({ ...x, examActive: factoryExamNew(x, Math.floor(Math.random() * 2 ** 31)) }))} className="mt-3 text-sm px-4 py-2 rounded-full" style={{ background: COLORS.onyx, color: COLORS.onyxText, fontWeight: 600 }}>Сдать экзамен</button>
+            </LavkaCard>
+          )}
+
           {f.day === 1 && !rep && (
             <LavkaCard tint={COLORS.sageSoft}>
               <p className="text-sm leading-relaxed">Теперь ты сам печёшь пирожки и продаёшь их оптом по рыночной цене ≈ {FACTORY.price} ₽. Решение дня — <b>сколько нанять пекарей</b>.
