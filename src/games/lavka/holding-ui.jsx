@@ -2,6 +2,7 @@
    Логика — ./holding.js; состояние уровня 5 живёт в lavka-save → st.holding. */
 import React, { useState } from "react";
 import { COLORS } from "../../ui/theme.js";
+import { scenarioQuiz } from "./quiz-scenario.js";
 import { LAVKA_MONO, lavkaRub, lavkaFmt, LAVKA_MEDALS } from "./model.js";
 import {
   HOLDING, HOLDING_GOALS, HOLDING_CHAPTERS,
@@ -10,7 +11,7 @@ import {
   holdingNextDay, holdingDailyFlow, holdingOffers, holdingSell,
   holdingExamOpen, holdingExamNew, holdingExamPlay, holdingExamResult, holdingExamFinish, levelFinish4,
 } from "./holding.js";
-import { LavkaAwning, LavkaCard, LevelFinishCapital } from "./components.jsx";
+import { LavkaAwning, LavkaCard, LevelFinishCapital, DayQuiz, dayQuizAnswer } from "./components.jsx";
 
 const rub = (x) => lavkaRub(Math.round(x));
 const btn = { background: COLORS.onyx, color: COLORS.onyxText, fontWeight: 600 };
@@ -155,6 +156,8 @@ function HoldingScreen({ st, update }) {
           {(h.subsidiaries || []).map((s) => <Row key={s.name} l={s.name} v={`${rub(s.dividend)}/день · ${s.daysLeft} дн.`} />)}
         </LavkaCard>
       )}
+
+      {day > 1 && !levelOver && !h.sold && <DayQuiz day={day} items={scenarioQuiz(5)} quiz={h.quiz} onAnswer={(ok) => setH((x) => dayQuizAnswer(x, ok))} />}
 
       {/* Портфель */}
       {!h.approved && day >= 2 && day <= HOLDING.approveBy && (

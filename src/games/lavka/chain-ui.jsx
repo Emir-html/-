@@ -2,13 +2,14 @@
    Логика — ./chain.js; состояние уровня 3 живёт в lavka-save → st.chain. */
 import React, { useState } from "react";
 import { COLORS } from "../../ui/theme.js";
+import { scenarioQuiz } from "./quiz-scenario.js";
 import { LAVKA_MONO, lavkaRub, lavkaFmt, LAVKA_MEDALS } from "./model.js";
 import {
   CHAIN, CHAIN_GOALS, CHAIN_CHAPTERS, CHAIN_UPGRADES,
   chainDay, chainMC, chainZoya, chainBuy, chainSetT, chainDecideT, chainCloseK1, chainSimulate, chainVerdict, chainK1MinAC, chainTContribution, levelFinish2,
   chainExamOpen, chainExamNew, chainExamPlayDay, chainExamResult, chainExamFinish,
 } from "./chain.js";
-import { LavkaStepper, LavkaAwning, LavkaCard, LevelFinishCapital } from "./components.jsx";
+import { LavkaStepper, LavkaAwning, LavkaCard, LevelFinishCapital, DayQuiz, dayQuizAnswer } from "./components.jsx";
 import { LevelFinish3Card } from "./factory-ui.jsx";
 
 const WEEKDAYS = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
@@ -184,6 +185,7 @@ function ChainScreen({ st, update }) {
             </LavkaCard>
           )}
 
+          {day > 1 && !levelOver && <DayQuiz day={day} items={scenarioQuiz(3)} quiz={chain.quiz} onAnswer={(ok) => setChain((c) => dayQuizAnswer(c, ok))} />}
           <LavkaCard>
             <p className="font-semibold">Сегодня</p>
             <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>

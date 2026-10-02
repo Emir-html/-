@@ -2,6 +2,7 @@
    Логика — ./fair.js; состояние уровня 2 живёт в lavka-save → st.fair. Объёмы — в реальных стаканах дня. */
 import React, { useState } from "react";
 import { COLORS } from "../../ui/theme.js";
+import { scenarioQuiz } from "./quiz-scenario.js";
 import { LAVKA_MONO, lavkaRub, lavkaFmt, LAVKA_MEDALS } from "./model.js";
 import {
   FAIR, FAIR_GOALS, FAIR_CHAPTERS, FAIR_UPGRADES,
@@ -9,7 +10,7 @@ import {
   fairBarrelNPV, fairRivalsToday, fairAnswerOffer, fairLeaveCartel, levelFinish,
   fairExamOpen, fairExamNew, fairExamPlayDay, fairExamResult, fairExamFinish, fairExamCartel,
 } from "./fair.js";
-import { LavkaStepper, LavkaAwning, LavkaCard, LevelFinishCapital } from "./components.jsx";
+import { LavkaStepper, LavkaAwning, LavkaCard, LevelFinishCapital, DayQuiz, dayQuizAnswer } from "./components.jsx";
 import { LevelFinish2Card } from "./chain-ui.jsx";
 
 const WEEKDAYS = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
@@ -182,6 +183,7 @@ function FairScreen({ st, update }) {
             </LavkaCard>
           )}
 
+          {day > 1 && !levelOver && <DayQuiz day={day} items={scenarioQuiz(2)} quiz={fair.quiz} onAnswer={(ok) => setFair((f) => dayQuizAnswer(f, ok))} />}
           {fair.offer && (
             <LavkaCard tint={COLORS.amberSoft}>
               <p className="font-semibold">🤝 Семён предлагает договор</p>

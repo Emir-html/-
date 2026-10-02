@@ -15,6 +15,8 @@
    Дуополия (событие «конкурент»): Q = 0,55·A − B·P + 0,5·B·Pк,
      наилучший ответ конкурента Pк = (0,55·A + 0,5·B·P + B·c)/(2B). */
 
+import { scenarioQuiz } from "./quiz-scenario.js";
+
 const LAVKA_PRODUCTS = {
   lemonade:  { name: "Лимонад",   emoji: "🍋", unit: "стак.", a: 160, b: 2,   c: 20 },
   croissant: { name: "Круассан",  emoji: "🥐", unit: "шт.",   a: 200, b: 2.5, c: 30 },
@@ -818,8 +820,13 @@ function lavkaStudyItems(bank = {}) {
   return [...out, ...lavkaOwnQuizItems()];
 }
 
-const lavkaOwnQuizItems = () => LAVKA_QUIZ.map((x, i) => ({ id: `lavka:${i}`, q: x.q, opts: x.opts, a: x.a, why: x.why,
-  chapter: LAVKA_QUIZ_META[i][0], topic: LAVKA_QUIZ_META[i][1], src: "Задача «Лавки»" }));
+const lavkaOwnQuizItems = () => [
+  ...LAVKA_QUIZ.map((x, i) => ({ id: `lavka:${i}`, q: x.q, opts: x.opts, a: x.a, why: x.why,
+    chapter: LAVKA_QUIZ_META[i][0], topic: LAVKA_QUIZ_META[i][1], src: "Задача «Лавки»" })),
+  /* Вопросы сценария «Путь компании» для уровня 1: глава — по теме, иначе по номеру (1–7, 8–14, 15–20). */
+  ...scenarioQuiz(1).map((x, i) => ({ id: `scen:${x.id}`, q: x.q, opts: x.opts, a: x.a, why: x.why,
+    chapter: lavkaTopicChapter(x.topic) || (i < 7 ? 1 : i < 14 ? 2 : 3), topic: x.topic, src: "Сценарий «Путь компании»" })),
+];
 
 /* Вопрос дня: детерминирован по дню и главе; темы открытых глав (текущая ×2), слабые по SM-2 ×3, без повторов из seen. */
 function lavkaPickQuiz(items, { day, chapter, seen = [], weak = [] }) {

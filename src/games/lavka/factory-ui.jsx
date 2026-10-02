@@ -2,13 +2,14 @@
    Логика — ./factory.js; состояние уровня 4 живёт в lavka-save → st.factory. */
 import React, { useState } from "react";
 import { COLORS } from "../../ui/theme.js";
+import { scenarioQuiz } from "./quiz-scenario.js";
 import { LAVKA_MONO, lavkaRub, lavkaFmt, LAVKA_MEDALS } from "./model.js";
 import {
   FACTORY, FACTORY_GOALS, FACTORY_CHAPTERS,
   factoryQ, factoryPrice, factoryFloor, factoryWage, factoryBestL, factoryBoilerMath, factoryBuyBoiler, factoryAnswer, factorySimulate, factoryVerdict,
   factoryExamOpen, factoryExamNew, factoryExamPlayDay, factoryExamResult, factoryExamFinish, levelFinish3,
 } from "./factory.js";
-import { LavkaStepper, LavkaAwning, LavkaCard, LevelFinishCapital } from "./components.jsx";
+import { LavkaStepper, LavkaAwning, LavkaCard, LevelFinishCapital, DayQuiz, dayQuizAnswer } from "./components.jsx";
 
 const f0 = (x) => Math.round(x).toLocaleString("ru-RU");
 
@@ -162,6 +163,7 @@ function FactoryScreen({ st, update, children }) {
             </LavkaCard>
           )}
 
+          {day > 1 && !levelOver && <DayQuiz day={day} items={scenarioQuiz(4)} quiz={factory.quiz} onAnswer={(ok) => setFactory((f) => dayQuizAnswer(f, ok))} />}
           {factory.offer === "contract" && (
             <LavkaCard tint={COLORS.amberSoft}>
               <p className="font-semibold">📝 Договор Нины</p>
