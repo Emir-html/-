@@ -220,7 +220,9 @@ test("экзамен уровня 2: открыт в главе 3 с 22-го д�
   assert.equal(F.fairExamOpen(f), true);
   assert.equal(F.fairExamOpen({ ...f, day: 21 }), false);
   const e = F.fairExamNew(f, 9);
-  assert.deepEqual(e.days.map((d) => d.kind), ["cournot3", "entry", "cartel", "leader"]);
+  assert.deepEqual(e.days.map((d) => d.kind), ["cournot3", "cheap", "cartel", "leader"]);
+  const T = new Set(); for (let s = 0; s < 80; s++) T.add(F.fairExamNew(f, s).days[2].punishDays);
+  assert.deepEqual([...T].sort(), [1, 2, 3, 4, 5], "длина наказания 1–5 дней");
   assert.deepEqual(e.days, F.fairExamNew(f, 9).days);
 });
 
@@ -230,9 +232,28 @@ test("экзамен уровня 2: бот = 100%; обман картеля и
   const best = play((d) => F.fairExamBotQ(f, d));
   near(F.fairExamResult(best).eff, 1, 1e-9);
   const cheat = play((d) => (d.kind === "cartel" ? Math.round(F.fairBR(F.fairCartelMath(F.fairMC(f)).qRival)) : F.fairExamBotQ(f, d)));
-  assert.ok(F.fairExamResult(cheat).days[2] < 0.7, `обман: ${F.fairExamResult(cheat).days[2]}`);
+  const ex4 = F.fairExamNew(f, 4), T = ex4.days[2].punishDays, cm = F.fairCartelMath(F.fairMC(f), T);
+  if (cm.cheatGain < cm.punishLoss) assert.ok(F.fairExamResult(cheat).days[2] < 0.5, `обман при T = ${T}: ${F.fairExamResult(cheat).days[2]}`);
+  else near(F.fairExamResult(cheat).days[2], 1, 0.02); // наказание короткое — обман и есть лучший ответ
   const duo = play(() => 53);
   assert.ok(!F.fairExamResult(duo).medal || F.fairExamResult(duo).medal.id === "bronze", "«всегда 53» — не выше бронзы");
   const after = F.fairExamFinish(f, best);
   assert.equal(after.cash, f.cash); assert.equal(after.examBest.medal, "gold");
+});
+
+test("экзамен уровня 2: без расчётов серебра не бывает; квота + 2 — это обман; > 100% не бывает", () => {
+  const f = examFair();
+  let silver = 0;
+  for (let s = 0; s < 60; s++) {
+    let ex = F.fairExamNew(f, 1000 + s);
+    for (let i = 0; i < 4; i++) ex = F.fairExamPlayDay(f, ex, ex.days[i].kind === "cartel" ? Math.round(F.fairCartelMath(F.fairMC(f)).qPlayer) : 53).exam;
+    const r = F.fairExamResult(ex);
+    if (r.medal && r.medal.id !== "bronze") silver++;
+    assert.ok(r.days.every((d) => d <= 1 + 1e-9));
+  }
+  assert.ok(silver <= 3, `«всегда 53 и верен картелю» — серебро в ${silver} из 60`);
+  const ex = F.fairExamNew(f, 7), d = ex.days[2];
+  const cm = F.fairCartelMath(F.fairMC(f), d.punishDays);
+  const r = F.fairExamPlayDay(f, { ...ex, results: [{}, {}].map(() => ({ botMargin: 1, playerMargin: 1 })) }, Math.round(cm.qPlayer) + 2).result;
+  assert.equal(r.cheated, true);
 });

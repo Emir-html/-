@@ -60,8 +60,8 @@ function FairExam({ fair, setFair }) {
   const head = (
     <LavkaCard tint={COLORS.blueSoft}>
       <p className="font-semibold">🎓 Экзамен уровня 2{done ? " — итог" : ` · день ${i + 1} из ${exam.days.length}`}</p>
-      <p className="text-sm mt-1">Четыре дня без подсказок: Курно на троих, вход дешёвого конкурента, картель, лидерство. Объёмы конкурентов
-        не показываются — известны их число и MC. Оценка — твоя маржа (до аренды) против бота на том же шоке спроса; касса не меняется.</p>
+      <p className="text-sm mt-1">Четыре дня без подсказок: Курно на троих, дешёвый конкурент, картель, лидерство. Объёмы конкурентов
+        не показываются — известны их число и MC. Оценка — точность решения: маржа против бота на том же шоке спроса, пересчитанная в ошибку объёма; касса не меняется.</p>
     </LavkaCard>
   );
   if (done) {
@@ -182,7 +182,7 @@ function FairScreen({ st, update }) {
           {fairExamOpen(fair) && (
             <LavkaCard tint={COLORS.blueSoft}>
               <p className="font-semibold">🎓 Экзамен уровня 2 открыт</p>
-              <p className="text-sm mt-1">4 дня без подсказок: Курно на троих, вход дешёвого конкурента, картель, лидерство. MC конкурентов каждый раз новые — равновесие придётся считать. Касса не меняется, пересдавать можно.</p>
+              <p className="text-sm mt-1">4 дня без подсказок: Курно на троих, дешёвый конкурент, картель, лидерство. MC конкурентов каждый раз новые — равновесие придётся считать. Касса не меняется, пересдавать можно.</p>
               {fair.examBest && <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Лучший результат: {Math.round(fair.examBest.eff * 100)}%{fair.examBest.medal ? " " + LAVKA_MEDALS.find((m) => m.id === fair.examBest.medal).emoji : ""} · попыток {fair.examBest.attempts}</p>}
               <button onClick={() => setFair((f) => ({ ...f, examActive: fairExamNew(f, Math.floor(Math.random() * 2 ** 31)) }))} className="mt-3 text-sm px-4 py-2 rounded-full" style={{ background: COLORS.onyx, color: COLORS.onyxText, fontWeight: 600 }}>Сдать экзамен</button>
             </LavkaCard>

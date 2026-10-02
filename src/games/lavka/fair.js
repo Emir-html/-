@@ -65,7 +65,7 @@ function fairStackelberg(k = 1, cp = FAIR.c) {
    квоты — пропорционально объёмам Курно, чтобы оба выигрывали против Курно. При равных MC — по половине.
    Упрощение: при разных MC настоящий максимум совместной прибыли — весь выпуск у фирмы с меньшей MC
    (с переделом прибыли), но такие договорённости на ярмарке не заключают. */
-function fairCartelMath(cp = FAIR.c) {
+function fairCartelMath(cp = FAIR.c, punishDays = FAIR.punishDays) {
   const { A, B, c } = FAIR;
   const cn = fairCournotAsym(cp, c);
   const Qm = (A - (cp + c) / 2) / (2 * B);
@@ -78,7 +78,7 @@ function fairCartelMath(cp = FAIR.c) {
   /* Для вечного наказания картель устойчив при δ ≥ (π_обман − π_картель)/(π_обман − π_Курно). */
   const deltaMin = (cheatProfit - cartelProfit) / (cheatProfit - cournotProfit);
   return { qPlayer, qRival, qCartel: qPlayer, Qm, P, cartelProfit, rivalProfit, qCheat, cheatProfit,
-    cheatGain: cheatProfit - cartelProfit, cournotProfit, punishLoss: (cartelProfit - cournotProfit) * FAIR.punishDays, deltaMin };
+    cheatGain: cheatProfit - cartelProfit, cournotProfit, punishLoss: (cartelProfit - cournotProfit) * punishDays, punishDays, deltaMin };
 }
 
 /* Цена продажи бизнеса по медали: аннуитет на dividendDays дней при ставке rate. */
@@ -292,8 +292,8 @@ function levelFinish(st, choice) {
 
 /* ===== Экзамен уровня 2 =====
    4 независимых дня на копии ярмарки (касса не меняется). Объёмы конкурентов НЕ показываются — известны их число и MC:
-   равновесие нужно посчитать самому. Оценка — как на уровне 1: среднее по дням отношения маржи (до аренды)
-   к марже бота на том же шоке спроса, медаль требует ещё и минимума по каждому дню. */
+   равновесие нужно посчитать самому. Оценка дня — через ошибку в объёме относительно бота-оптимизатора на том же шоке
+   спроса (см. fairExamResult); медаль — среднее и минимум по дням, пороги как на уровне 1. */
 /* Нэш Курно для фирм с издержками costs: qᵢ = (A − (n + 1)·cᵢ + Σⱼ cⱼ)/((n + 1)B). */
 function fairNashCosts(costs) {
   const { A, B } = FAIR, n = costs.length, sum = costs.reduce((a, b) => a + b, 0);
@@ -302,10 +302,10 @@ function fairNashCosts(costs) {
 const FAIR_EXAM_KINDS = [
   { kind: "cournot3", title: "Курно, трое", rivals: [40, 40],
     text: "На ярмарке трое: ты и два продавца с MC = 40 ₽. Все опытные — играют равновесие Курно. Сколько испечь?" },
-  { kind: "entry", title: "Вход дешёвого конкурента", rivals: [40, 30],
+  { kind: "cheap", title: "Дешёвый конкурент", rivals: [40, 30],
     text: "Пришёл новичок со своей мукой: его MC = 30 ₽, у Семёна — 40 ₽. Все играют Курно. Сколько испечь?" },
   { kind: "cartel", title: "Картель", rivals: [40],
-    text: "Семён предлагает картель на прежних условиях; обман он заметит и 5 дней будет печь по Курно (это засчитается)." },
+    text: "Семён предлагает картель на прежних условиях; обман он заметит и будет печь по Курно (наказание засчитается сразу)." },
   { kind: "leader", title: "Лидерство", rivals: [40],
     text: "Сегодня у тебя утренний прилавок: Семён (MC = 40) увидит твой объём и ответит наилучшим образом." },
 ];
@@ -319,25 +319,31 @@ function fairExamNew(f, seed) {
       rivals = [pick(36, 44), pick(36, 44)];
       text = `На ярмарке трое: ты и два продавца с MC = ${rivals[0]} ₽ и ${rivals[1]} ₽. Все опытные — играют равновесие Курно. Сколько испечь?`;
     }
-    if (k.kind === "entry") {
+    if (k.kind === "cheap") {
       rivals = [pick(38, 42), pick(26, 32)];
       text = `Пришёл новичок со своей мукой: его MC = ${rivals[1]} ₽, у Семёна — ${rivals[0]} ₽. Все играют Курно. Сколько испечь?`;
     }
-    return { kind: k.kind, title: k.title, text, rivals, seed: Math.floor(rng() * 2 ** 31) };
+    let punishDays;
+    if (k.kind === "cartel") {
+      /* Длина наказания случайна: при коротком наказании обман выгоден — ответ нужно посчитать, а не вспомнить. */
+      punishDays = pick(1, 5);
+      text = `Семён предлагает картель на прежних условиях. Обман он заметит и ${punishDays} дн. будет печь по Курно — потери засчитаются сразу (без дисконта, при δ ≈ 0,995 это почти то же). Держать квоту или обмануть?`;
+    }
+    return { kind: k.kind, title: k.title, text, rivals, punishDays, seed: Math.floor(rng() * 2 ** 31) };
   });
   return { seed, results: [], days };
 }
 /* Объём конкурентов в день экзамена при объёме игрока q. */
 function fairExamRivalsQ(f, d, q) {
   const cp = fairMC(f);
-  if (d.kind === "cartel") return fairCartelMath(cp).qRival;
+  if (d.kind === "cartel") return fairCartelMath(cp, d.punishDays).qRival;
   if (d.kind === "leader") return fairRivalsReply(q, 1);
   return fairNashCosts([cp, ...d.rivals]).slice(1).reduce((a, b) => a + b, 0);
 }
 /* Решение бота-оптимизатора (до шока спроса). */
 function fairExamBotQ(f, d) {
   const cp = fairMC(f);
-  if (d.kind === "cartel") return Math.round(fairCartelMath(cp).qPlayer);
+  if (d.kind === "cartel") { const cm = fairCartelMath(cp, d.punishDays); return Math.round(cm.cheatGain > cm.punishLoss ? cm.qCheat : cm.qPlayer); }
   if (d.kind === "leader") return Math.round(fairStackelberg(1, cp).qL);
   return Math.round(fairNashCosts([cp, ...d.rivals])[0]);
 }
@@ -346,8 +352,8 @@ function fairExamMargin(f, d, q, Areal) {
   const P = Math.max(0, Areal - FAIR.B * (q + Qr));
   let margin = (P - cp) * q, cheated = false;
   if (d.kind === "cartel") {
-    const cm = fairCartelMath(cp);
-    if (q > cm.qPlayer + 2) { cheated = true; margin -= cm.punishLoss; } // цена наказания — сразу
+    const cm = fairCartelMath(cp, d.punishDays);
+    if (q > Math.round(cm.qPlayer)) { cheated = true; margin -= cm.punishLoss; } // любой объём выше квоты — обман; цена наказания — сразу
   }
   return { margin, P, Qr, cheated };
 }
@@ -361,7 +367,9 @@ function fairExamPlayDay(f, exam, q) {
 }
 function fairExamResult(exam) {
   if (!exam.results.length || exam.results.some((r) => !(r.botMargin > 0))) return null;
-  const days = exam.results.map((r) => r.playerMargin / r.botMargin);
+  /* Маржа квадратична по ошибке: доля = 1 − (Δq/q*)². Оценка дня — через ошибку в объёме: 1 − √(1 − доля),
+     то есть ≈ 1 − |Δq|/q* (ошибка 30% стоит 30%, а не 9%). Доля ограничена сверху единицей. */
+  const days = exam.results.map((r) => Math.max(0, 1 - Math.sqrt(Math.max(0, 1 - Math.min(1, r.playerMargin / r.botMargin)))));
   const eff = days.reduce((a, b) => a + b, 0) / days.length, minDay = Math.min(...days);
   return { eff, minDay, days, medal: lavkaExamMedal(eff, minDay) };
 }
