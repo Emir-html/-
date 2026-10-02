@@ -5,21 +5,21 @@ import * as F from "./fair.js";
 import * as L from "./model.js";
 
 const DAYS = Number(process.argv[2] || 30), RUNS = Number(process.argv[3] || 30);
-const today = (st) => F.fairRivalsReply(st.lastQ, st.rivals.length) * st.rivals.length; // конкуренты отвечают на вчерашний объём
+const today = (st) => F.fairRivalsToday(st); // конкуренты играют Курно (или квоту картеля) — их объём известен заранее
 
 const strategies = {
   "наилучший ответ + верность картелю + вложения": (st) => {
     st = F.fairBuy(F.fairBuy(st, "flour"), "leader");
     const c = F.fairMC(st);
-    if (st.cartel && st.cartel.active && st.cartel.punish === 0 && !st.leader) return { ...st, q: Math.round(F.fairCartelMath().qCartel) };
-    if (st.leader) return { ...st, q: Math.round((F.FAIR.A - c) / (2 * F.FAIR.B)) };
+    if (st.cartel && st.cartel.active && st.cartel.punish === 0 && !st.leader) return { ...st, q: Math.round(F.fairCartelMath(c).qPlayer) };
+    if (st.leader) return { ...st, q: Math.round(F.fairStackelberg(st.rivals.length, c).qL) };
     return { ...st, q: Math.round(F.fairBR(today(st), c)) };
   },
   "наилучший ответ без вложений": (st) => {
     if (st.cartel && st.cartel.active && st.cartel.punish === 0) return { ...st, q: Math.round(F.fairCartelMath().qCartel) };
     return { ...st, q: Math.round(F.fairBR(today(st))) };
   },
-  "наилучший ответ, но обманывает картель": (st) => ({ ...st, q: Math.round(F.fairBR(st.cartel && st.cartel.active && st.cartel.punish === 0 ? F.fairCartelMath().qCartel : today(st))) }),
+  "наилучший ответ, но обманывает картель": (st) => ({ ...st, q: Math.round(F.fairBR(today(st))) }),
   "всегда Курно на двоих (53)": (st) => ({ ...st, q: 53 }),
   "всегда монопольный объём (80)": (st) => ({ ...st, q: 80 }),
   "печёт мало (20)": (st) => ({ ...st, q: 20 }),
@@ -42,6 +42,6 @@ for (const [name, fn] of Object.entries(strategies)) for (const choice of ["sell
   rows.push({ стратегия: name, капитал: choice === "sell" ? "продать" : "дочка", "прибыль ярмарки": Math.round(t / RUNS),
     "стоимость к концу": Math.round(w / RUNS), "глава": (ch / RUNS).toFixed(1), "целей": (g / RUNS).toFixed(1) });
 }
-rows.sort((a, b) => b["стоимость к концу"] - a["стоимость к концу"]);
+rows.sort((a, b) => b["прибыль ярмарки"] - a["прибыль ярмарки"]); // главная метрика — прибыль ярмарки (без капитала и процентов)
 console.log(`Ярмарка: ${DAYS} дней, прогонов ${RUNS}; продажа лавки (серебро) = ${Math.round(F.fairSalePrice("silver"))} ₽`);
 console.table(rows);

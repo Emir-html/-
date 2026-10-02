@@ -5,7 +5,7 @@ import { COLORS } from "../../ui/theme.js";
 import { LAVKA_MONO, lavkaRub, lavkaFmt, LAVKA_MEDALS } from "./model.js";
 import {
   FAIR, FAIR_GOALS, FAIR_CHAPTERS, FAIR_UPGRADES, LEVEL1_DIVIDEND,
-  fairCartelMath, fairSalePrice, fairSimulate, fairVerdict, fairBuy, fairFit, fairMC, levelFinish,
+  fairCartelMath, fairSalePrice, fairSimulate, fairVerdict, fairBuy, fairFit, fairMC, levelFinish, fairRivalsToday,
 } from "./fair.js";
 import { LavkaStepper, LavkaAwning, LavkaCard } from "./components.jsx";
 
@@ -27,8 +27,9 @@ function LevelFinishCard({ st, update }) {
         <li><b>Оставить дочкой</b>: {lavkaFmt(D)} ₽ в день {FAIR.dividendDays} дней.</li>
       </ul>
       <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>
-        Деньги на счёте ярмарки приносят r = 0,5% в день, поэтому без вложений варианты равноценны по PV. Продажа выгоднее,
-        если ты вложишь деньги доходнее r (например, в «Свою муку»). Старт уровня 2 — грант {lavkaRub(FAIR.grant)} плюс выбранное.
+        Деньги на счёте ярмарки приносят r = 0,5% в день (игровая ставка, очень высокая: ≈ 500% годовых), поэтому без вложений
+        варианты равноценны по PV. Продажа выгоднее, если деньги нужны сейчас на вложение доходнее r (например, «Своя мука»)
+        и взять кредит под r нельзя. Старт уровня 2 — грант {lavkaRub(FAIR.grant)} плюс выбранное.
       </p>
       {sure ? (
         <div className="flex gap-2 mt-3 flex-wrap">
@@ -53,17 +54,20 @@ function FairScreen({ st, update }) {
   const [tab, setTab] = useState("fair");
   const [rep, setRep] = useState(null);
   const setFair = (fn) => update((s) => ({ ...s, fair: fn(s.fair) }));
-  const cm = fairCartelMath(), mc = fairMC(fair);
+  const mc = fairMC(fair), cm = fairCartelMath(mc);
   const ch = FAIR_CHAPTERS[fair.chapter - 1], next = FAIR_CHAPTERS[fair.chapter];
   const Qr = fair.rivals.reduce((s, r) => s + r.q, 0);
   const oracle = fair.day <= FAIR.oracleDays, fit = fairFit(fair.obs);
-  const inCartel = fair.cartel && fair.cartel.active && fair.cartel.punish === 0;
+  const inCartel = !!(fair.cartel && fair.cartel.active && fair.cartel.punish === 0) && !fair.leader;
   const dividends = (fair.subsidiaries || []).filter((x) => x.daysLeft > 0).reduce((s, x) => s + x.dividend, 0);
 
   /* Прогноз — только по тому, что игрок знает: первую неделю по истинному спросу, потом по своей оценке. */
-  const expRivals = inCartel ? cm.qCartel * fair.rivals.length : Qr;
+  const expRivals = fair.leader ? null : fairRivalsToday(fair);
   const est = oracle ? { A: FAIR.A, B: FAIR.B } : fit;
-  const P = est ? Math.max(0, est.A - est.B * (expRivals + fair.q)) : null;
+  /* Лидер: конкуренты ответят на твой объём — прогноз по остаточному спросу лидера. */
+  const P = !est ? null : fair.leader
+    ? Math.max(0, (est.A + fair.rivals.length * FAIR.c) / (fair.rivals.length + 1) - (est.B * fair.q) / (fair.rivals.length + 1))
+    : Math.max(0, est.A - est.B * (expRivals + fair.q));
   const open = () => {
     const out = fairSimulate(fair, Math.random);
     setRep(out.report);
@@ -99,7 +103,7 @@ function FairScreen({ st, update }) {
                 {rep.reward > 0 && <Line l="Награды за цели" v={"+" + lavkaRub(rep.reward)} />}
               </div>
               <p className="text-sm mt-2" style={{ color: COLORS.ink }}>{fairVerdict(rep)}</p>
-              {rep.cheated && <p className="text-sm mt-2" style={{ color: COLORS.rust }}>Ты испёк больше договорённых {cm.qCartel}. Семён заметил: {FAIR.punishDays} дней он печёт по Курно. Выигрыш обмана — один день (≈ +{lavkaFmt(cm.cheatGain)} ₽), потери — ≈ {lavkaFmt(cm.punishLoss)} ₽ за наказание.</p>}
+              {rep.cheated && <p className="text-sm mt-2" style={{ color: COLORS.rust }}>Семён заметил обман: {FAIR.punishDays} дней он печёт по Курно.</p>}
               {rep.entered && <p className="text-sm mt-2" style={{ color: COLORS.ink }}>🏪 На ярмарку пришёл новый продавец: {rep.entered}. Пока продавцы в плюсе, новички ждут прибыль — и входят.</p>}
               {rep.newChapter && <p className="text-sm mt-2 font-semibold">📖 Открыта глава {rep.newChapter}: «{FAIR_CHAPTERS[rep.newChapter - 1].title}»</p>}
               {rep.newGoals.map((id) => { const g = FAIR_GOALS.find((x) => x.id === id); return <p key={id} className="text-sm mt-1 font-semibold">{g.emoji} Цель: {g.title} (+{lavkaFmt(g.reward)} ₽)</p>; })}
@@ -125,15 +129,15 @@ function FairScreen({ st, update }) {
               {fair.leader ? "У тебя утренний прилавок: конкуренты видят твой сегодняшний объём и отвечают на него."
                 : inCartel ? `Картель: каждый печёт по ${cm.qCartel}.`
                   : fair.cartel && fair.cartel.punish > 0 ? `Семён наказывает за обман: ещё ${fair.cartel.punish} дн. печёт по Курно.`
-                    : "Каждый печёт столько, сколько выгодно ему, ожидая выгодного решения от остальных (равновесие Курно)."}
+                    : "Опытные торговцы печь будут как в равновесии Курно — каждый ждёт от остальных рационального ответа. (Наивно «отвечать на вчерашний объём» при трёх и более продавцах не сходится — цены бы качались.)"}
             </p>
           </LavkaCard>
 
           {fair.chapter === 3 && fair.cartel && (
             <LavkaCard tint={COLORS.amberSoft}>
               <p className="font-semibold">🤝 Предложение Семёна</p>
-              <p className="text-sm mt-1">«Давай печь по {cm.qCartel} — цена будет {FAIR.A - 2 * cm.qCartel} ₽, каждому по {lavkaFmt(cm.cartelProfit)} ₽ до аренды. Обманешь — {FAIR.punishDays} дней буду печь по Курно».</p>
-              <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Повторяющаяся дилемма заключённого: обман выгоден сегодня, верность — на горизонте наказания.</p>
+              <p className="text-sm mt-1">«Ты печёшь {Math.round(cm.qPlayer)}, я — {Math.round(cm.qRival)}: цена будет {Math.round(cm.P)} ₽, тебе ≈ {lavkaFmt(cm.cartelProfit)} ₽ до аренды (по Курно ≈ {lavkaFmt(cm.cournotProfit)}). Обманешь — {FAIR.punishDays} дней буду печь по Курно».</p>
+              <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Повторяющаяся дилемма заключённого: обман даст ≈ +{lavkaFmt(cm.cheatGain)} ₽ за день, наказание отнимет ≈ {lavkaFmt(cm.punishLoss)} ₽. Квоты пропорциональны долям в Курно — так выигрывают оба.</p>
             </LavkaCard>
           )}
 
@@ -146,7 +150,7 @@ function FairScreen({ st, update }) {
               className="w-full mt-2" style={{ accentColor: COLORS.sage }} aria-label="Сколько испечь" />
             <p className="text-xs mt-2" style={{ color: COLORS.inkSoft, fontFamily: LAVKA_MONO }}>
               {est
-                ? `${oracle ? "" : "📓 по твоей оценке: "}если конкуренты испекут ${Math.round(expRivals)}, цена ≈ ${P.toFixed(0)} ₽, прибыль ≈ ${lavkaRub((P - mc) * fair.q - FAIR.rent)}`
+                ? `${oracle ? "" : "📓 по твоей оценке: "}${fair.leader ? "конкуренты ответят на твой объём" : `если конкуренты испекут ${Math.round(expRivals)}`}, цена ≈ ${P.toFixed(0)} ₽, прибыль ≈ ${lavkaRub((P - mc) * fair.q - FAIR.rent)}`
                 : "Оценка спроса появится после 3 дней с разным суммарным объёмом."}
             </p>
             {oracle && <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Первую неделю прогноз — по истинному спросу. Потом — только по твоим наблюдениям.</p>}

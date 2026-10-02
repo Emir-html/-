@@ -79,10 +79,10 @@ test("картель: верность выгоднее обмана на гор
   near(r2.report.rivals[0].q, F.fairCournot(2).q); // наказание: возврат к Курно
 });
 
-test("главы ярмарки: 2 — с 8-го дня после Нэша; 3 — с 15-го после 3 дней с прибылью при 4 фирмах; в главе 3 рынок на двоих", () => {
-  let st = F.fairNewState(1e5); st.day = 7; st.goals = { nash: 3 };
-  assert.equal(F.fairSimulate(st, L.lavkaRng(1)).next.chapter, 2);
-  st = F.fairNewState(1e5); st.day = 14; st.chapter = 2; st.goals = { nash: 3, longrun: 12 };
+test("главы ярмарки открываются по дням (рынок не ждёт): 2 — с 8-го, 3 — с 15-го; в главе 3 рынок на двоих", () => {
+  let st = F.fairNewState(1e5); st.day = 7;
+  assert.equal(F.fairSimulate(st, L.lavkaRng(1)).next.chapter, 2, "без цели «Нэш» — тоже");
+  st = F.fairNewState(1e5); st.day = 14; st.chapter = 2;
   st.rivals = [1, 2, 3].map((i) => ({ name: "К" + i, q: 30 }));
   const n = F.fairSimulate(st, L.lavkaRng(1)).next;
   assert.equal(n.chapter, 3); assert.equal(n.rivals.length, 1); assert.ok(n.cartel && n.cartel.active);
@@ -147,4 +147,58 @@ test("продать или оставить дочку: без вложений
   };
   const a = worth("sell"), b = worth("keep");
   assert.ok(Math.abs(a - b) / a < 0.02, `продать ${Math.round(a)} vs дочка ${Math.round(b)}`);
+});
+
+/* ===== Ревью экономиста (72%) ===== */
+
+test("MR и наилучший ответ считаются от одного (среднего) A: при q = BR вердикт говорит «≈»", () => {
+  const st = F.fairNewState(1e4); st.q = Math.round(F.fairBR(F.fairCournot(2).q));
+  for (let s = 0; s < 10; s++) {
+    const r = F.fairSimulate(st, L.lavkaRng(s)).report;
+    near(r.mrTrue, F.FAIR.A - F.FAIR.B * r.Qr - 2 * F.FAIR.B * r.q);
+    assert.match(F.fairVerdict(r), /≈/);
+  }
+});
+
+test("вердикт лидера учитывает реакцию последователя: при q = q_L — «≈», а не «печь меньше»", () => {
+  const st = F.fairNewState(1e4); st.chapter = 3; st.leader = true; st.q = 80;
+  const r = F.fairSimulate(st, L.lavkaRng(1)).report;
+  near(r.br, 80); near(r.mrTrue, F.FAIR.c);
+  const v = F.fairVerdict(r);
+  assert.match(v, /≈/); assert.ok(!/меньше/.test(v), v); assert.match(v, /реак|последоват|Штакельберг/i);
+});
+
+test("вердикт в картеле говорит о наказании и условии устойчивости δ", () => {
+  const st = F.fairNewState(1e4); st.chapter = 3; st.cartel = { active: true, punish: 0, faithful: 0 }; st.q = 40;
+  const v = F.fairVerdict(F.fairSimulate(st, L.lavkaRng(1)).report);
+  assert.match(v, /наказан/i); assert.match(v, /δ/);
+});
+
+test("картель при разных MC: квоты пропорциональны Курно, оба выигрывают, обман невыгоден", () => {
+  const k = F.fairCartelMath(30), cn = F.fairCournotAsym(30, 40);
+  assert.ok(k.qPlayer > k.qRival);
+  assert.ok(k.cartelProfit > cn.profitP && k.rivalProfit > cn.profitR, "картель лучше Курно для обоих");
+  assert.ok(k.cheatGain > 0 && k.cheatGain < k.punishLoss, `обман ${k.cheatGain} < потери ${k.punishLoss}`);
+  const eq = F.fairCartelMath(40); near(eq.qPlayer, 40); near(eq.qRival, 40);
+});
+
+test("вход при своей муке: прибыль конкурентов — с их MC, граница по асимметричному Курно", () => {
+  const nash = (n, cp) => F.fairNashAsym(n, cp);
+  near(nash(2, 40).qr, F.fairCournot(2).q);
+  near(nash(2, 30).qp, F.fairCournotAsym(30, 40).qp); near(nash(2, 30).qr, F.fairCournotAsym(30, 40).qr);
+  let st = F.fairNewState(1e6); st.chapter = 2; st.day = 8; st.upgrades = { flour: true };
+  let maxFirms = 0;
+  for (let d = 0; d < 7; d++) {
+    st.q = Math.round(F.fairBR(F.fairRivalsToday(st), 30));
+    st = F.fairSimulate(st, L.lavkaRng(300 + d)).next; maxFirms = Math.max(maxFirms, st.rivals.length + 1);
+  }
+  let n = 2; while (nash(n + 1, 30).profitR > F.FAIR.rent) n++;
+  assert.ok(maxFirms <= n, `фирм ${maxFirms}, граница ${n}`);
+});
+
+test("утренний прилавок окупается за 10–20 дней против Курно", () => {
+  const u = F.FAIR_UPGRADES.find((x) => x.id === "leader");
+  const gain = F.fairStackelberg(1).profitL - F.fairCournot(2).profit;
+  const payback = u.cost / gain;
+  assert.ok(payback >= 10 && payback <= 20, `окупаемость ${payback.toFixed(1)}`);
 });
