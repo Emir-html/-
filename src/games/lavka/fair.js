@@ -22,8 +22,8 @@ const FAIR = {
   a: 100, b: 0.05, c: 20, noise: 0.04,
   unitTax: 10, taxUntilDay: 7, fee: 3000,
   kWeek: [1, 1, 1, 1, 1.1, 1.4, 1.3], // день 1 — понедельник
-  places: [[1, 2], [10, 3], [15, 5]], // сколько мест на ярмарке с какого дня (решает Смычков)
-  cartelDay: 5, punishDays: 5, inspectP: 0.08, fine: 25000,
+  places: [[1, 2], [10, 3], [15, 6]], // мест на ярмарке с какого дня (решает Смычков); шестое пустует — новичку не покрыть плату
+  cartelDay: 5, punishDays: 5, inspectP: 0.08, examInspectP: 0.2, fine: 25000,
   oracleDays: 7, examFromDay: 22, levelDays: 21,
 };
 const FAIR_RIVAL_NAMES = ["Семён", "Илья", "Студенты техникума", "Зоин квас", "Пятый продавец"];
@@ -75,10 +75,22 @@ function fairCartelMath(cp, cr, punishDays = FAIR.punishDays) {
   const cartelProfit = (P - cp) * qPlayer, rivalProfit = (P - cr) * qRival;
   const qCheat = fairBR(qRival, cp), cheatProfit = (a - b * (qCheat + qRival) - cp) * qCheat;
   const cournotProfit = (a - b * (xpC + xrC) - cp) * xpC;
-  const deltaMin = (cheatProfit - cartelProfit) / (cheatProfit - cournotProfit);
   return { qPlayer, qRival, Xm, P, cartelProfit, rivalProfit, qCheat, cheatProfit, cheatGain: cheatProfit - cartelProfit,
-    cournotProfit, cartelGain: cartelProfit - cournotProfit, punishLoss: (cartelProfit - cournotProfit) * punishDays, punishDays, deltaMin,
+    cournotProfit, cartelGain: cartelProfit - cournotProfit, punishLoss: (cartelProfit - cournotProfit) * punishDays, punishDays,
     expFine: FAIR.inspectP * FAIR.fine };
+}
+/* День, когда договор кончится сам: следующий вход продавца (места известны заранее — Смычков их объявил). */
+const fairCartelEndDay = (day) => (FAIR.places.find(([d]) => d > day) || [FAIR.levelDays + 1])[0];
+/* Обман сегодня (день day) против наказания на конечном горизонте: Курно на min(punishDays, дней до распада) дней,
+   с поправкой на k и дисконтом r. В последние дни перед известным концом наказывать нечем — обман выгоден
+   (обратная индукция), поэтому картели с известной датой распада разваливаются. */
+function fairCheatTradeoff(cp, cr, day) {
+  const cm = fairCartelMath(cp, cr), end = fairCartelEndDay(day), r = 0.02;
+  const days = Math.max(0, Math.min(FAIR.punishDays, end - day - 1));
+  let loss = 0;
+  for (let t = 1; t <= days; t++) loss += (cm.cartelGain * fairK(day + t)) / (1 + r) ** t;
+  const gain = cm.cheatGain * fairK(day);
+  return { gain, loss, days, end, cheatPays: gain > loss };
 }
 /* Картель двоих против третьего (Ильи) в Курно: «одна фирма» против одной — каждый из двоих получает половину. */
 function fairCartelVsThird(c = FAIR.c) {
@@ -90,13 +102,14 @@ function fairCartelVsThird(c = FAIR.c) {
 const FAIR_UPGRADES = [
   { id: "barrel", emoji: "🛢️", title: "Бочка-охладитель (Гена)", cost: 40000, salvage: 20000, chapter: 2, mc: 16,
     desc: "Твои MC 20 → 16 ₽ (у соперников прежние). В конце ярмарки Гена выкупит бочку за 20 000 ₽.",
-    lesson: "Асимметричный Курно: ниже MC — больше твой выпуск, меньше чужой. Ценность снижения издержек зависит от структуры рынка: при двоих +2 987 ₽ в будни, при троих +2 580, при пятерых +2 000. Покупка — проект: NPV = PV(прирост прибыли до конца ярмарки) + PV(выкуп) − 40 000. Купить на 8-й день выгодно, на 15-й — уже нет: дней осталось мало." },
+    lesson: "Асимметричный Курно: ниже MC — больше твой выпуск, меньше чужой. Ценность снижения издержек зависит от структуры рынка: при двоих +2 987 ₽ в будни, при троих +2 580, при пятерых +2 000. Покупка — проект: NPV = PV(прирост прибыли до конца ярмарки) + PV(выкуп) − 40 000. NPV > 0 при покупке до 11-го дня включительно (8-й: ≈ +7 000), с 12-го — уже < 0: дней осталось мало (расчёт — без утреннего прилавка)." },
   { id: "leader", emoji: "🌅", title: "Утренний прилавок", cost: 10000, chapter: 2, fromDay: 11, untilDay: 14,
     desc: "Дни 11–14: ты выставляешь бочку первым, соперники видят твой сегодняшний объём и отвечают на него. С 15-го Смычков перестраивает ряд — все открываются одновременно.",
-    lesson: "Штакельберг: лидер выбирает объём, зная ответ последователей: x_L = (a + m·c − (m + 1)·c_твоя)/(2b); при равных MC это (a − c)/(2b) = 800 при любом числе последователей. При троих лидер получает 10 667 ₽ в будни против 8 000 в Курно: за 4 дня (чт–вс, людей ×1; 1,1; 1,4; 1,3) это ≈ +12 800 ₽ — прилавок за 10 000 окупается. Обязательство работает, только пока соперники видят твой объём раньше своего решения." },
+    lesson: "Штакельберг: лидер выбирает объём, зная ответ последователей (при линейном спросе и постоянных MC): x_L = (a + m·c − (m + 1)·c_твоя)/(2b); при равных MC это (a − c)/(2b) = 800 при любом числе последователей. При троих лидер получает 10 667 ₽ в будни против 8 000 в Курно: за 4 дня (чт–вс, людей ×1; 1,1; 1,4; 1,3) это ≈ +12 800 ₽ — прилавок за 10 000 окупается. Обязательство работает, только пока соперники видят твой объём раньше своего решения." },
 ];
 const fairOwns = (st, id) => !!(st.upgrades && st.upgrades[id]);
-const fairMCbase = (st) => (fairOwns(st, "barrel") ? 16 : FAIR.c);
+/* Бочка снижает MC, пока не выкуплена Геной (на 21-й день). */
+const fairMCbase = (st) => (fairOwns(st, "barrel") && !st.upgrades.barrel.sold ? 16 : FAIR.c);
 /* MC игрока и соперников в день day — с налогом на единицу в первую неделю. */
 const fairMC = (st, day = st.day) => fairMCbase(st) + fairTax(day);
 const fairRivalMC = (day) => FAIR.c + fairTax(day);
@@ -106,7 +119,8 @@ function fairBarrelNPV(st) {
   const u = FAIR_UPGRADES[0], r = CAPITAL.rate;
   let pv = 0;
   for (let d = st.day; d <= FAIR.levelDays; d++) {
-    const n = fairPlaces(d) <= (st.rivals.length + 1) ? st.rivals.length + 1 : fairPlaces(d);
+    let n = st.rivals.length + 1; // сколько продавцов будет в день d: места заполняются, пока новичку окупается плата
+    while (n < fairPlaces(d) && fairNashAsym(n + 1, FAIR.c + fairTax(d), fairRivalMC(d)).profitR * fairKbar > FAIR.fee) n++;
     const cr = fairRivalMC(d);
     const gain = fairNashAsym(n, u.mc + fairTax(d), cr).profitP - fairNashAsym(n, FAIR.c + fairTax(d), cr).profitP;
     pv += (gain * fairK(d)) / (1 + r) ** (d - st.day + 1);
@@ -120,7 +134,11 @@ function fairBuy(st, id) {
   if (!u || fairOwns(st, id) || st.cash < u.cost || (st.chapter || 1) < u.chapter) return st;
   if ((u.fromDay && st.day < u.fromDay) || (u.untilDay && st.day > u.untilDay)) return st;
   const next = { ...st, cash: st.cash - u.cost, upgrades: { ...(st.upgrades || {}), [id]: { day: st.day } } };
-  if (id === "barrel") next.flags = { ...(st.flags || {}), barrelNPV: Math.round(fairBarrelNPV(st)) };
+  if (id === "barrel") {
+    next.flags = { ...(st.flags || {}), barrelNPV: Math.round(fairBarrelNPV(st)) };
+    /* Издержки изменились — прежние квоты больше не делят прибыль «по Курно»: Семён расторгает договор. */
+    if (next.cartel && next.cartel.active) next.cartel = { ...next.cartel, active: false, ended: "barrel" };
+  }
   if (id === "leader") { next.leader = true; if (next.cartel && next.cartel.active) next.cartel = { ...next.cartel, active: false, ended: "leader" }; }
   return next;
 }
@@ -265,7 +283,7 @@ function fairSimulate(st, rng = Math.random) {
   const report = {
     day, k, q, x, rivals, Xr, X, Q: X * k, a: aReal, P, margin, tax, fixed, profit, fined, inspected, dividend: pay.dividend, interest,
     reward, salvage, newGoals, newChapter, cheated, entered, dissolved, br: tr.br, mrTrue: tr.mr, intercept: tr.intercept, slope: tr.slope,
-    mc: cp, leader: !!st.leader, m, inCartel, cartelMath: inCartel || cheated ? cm : null,
+    mc: cp, leader: !!st.leader, m, inCartel, cartelMath: inCartel || cheated ? cm : null, tradeoff: inCartel ? fairCheatTradeoff(cp, cr, day) : null,
     mode: day <= FAIR.oracleDays ? "oracle" : "estimate",
   };
   const fit = fairFit(st.obs);
@@ -311,8 +329,11 @@ function fairVerdict(r) {
   const parts = [];
   if (r.inCartel && r.cartelMath) {
     const m = r.cartelMath;
-    parts.push(`Договор: твоя квота ${fmt(m.qPlayer)} стаканов будня. Обман дал бы +${fmt(m.cheatGain)} ₽ сегодня, но ${m.punishDays} дн. Курно отнимут ${fmt(m.punishLoss)} ₽. ` +
-      `А сам договор приносит лишь ${fmt(m.cartelGain)} ₽ в будни против Курно — меньше ожидаемого штрафа p·F = ${fmt(m.expFine)} ₽ в день.`);
+    const t = r.tradeoff;
+    parts.push(`Договор: твоя квота ${fmt(m.qPlayer)} стаканов будня. ` + (t && t.days < FAIR.punishDays
+      ? `Обман сегодня дал бы +${fmt(t.gain)} ₽, а наказывать Семёну осталось ${t.days} дн. до распада договора (${t.end}-й день): −${fmt(t.loss)} ₽. ${t.cheatPays ? "Обман выгоден — у договора с известным концом последние дни ничем не защищены, и по обратной индукции он разваливается." : ""}`
+      : `Обман сегодня дал бы +${fmt(t ? t.gain : m.cheatGain)} ₽, но ${FAIR.punishDays} дн. Курно отнимут ${fmt(t ? t.loss : m.punishLoss)} ₽.`) +
+      ` А сам договор приносит лишь ${fmt(m.cartelGain)} ₽ в будни против Курно — меньше ожидаемого штрафа p·F = ${fmt(m.expFine)} ₽ в день: сговор не окупается и без обмана.`);
   }
   if (r.cheated) parts.push(`Ты привёз(ла) больше квоты — ${FAIR.punishDays} дней Семён возит по Курно.`);
   if (r.fined) parts.push(`Рубцов раскрыл сговор: штраф ${fmt(r.fined)} ₽, договор расторгнут.`);
@@ -346,8 +367,12 @@ function levelFinish(st, choice) {
 
 /* ===== Экзамен уровня 2 «Закрытие сезона» =====
    3 дня (пн–ср, k = 1), соперники объявляют объёмы заранее («Соня спросила у всех») — экзамен проверяет наилучший ответ,
-   а не угадывание поведения ботов. Числа случайны по сиду. Оценка дня — по марже до фиксированной платы:
-   1 − √(1 − маржа/маржа*) ≈ 1 − |Δx|/x* (ошибка 30% стоит 30%). Ожидаемый штраф за сговор — издержки решения. */
+   а не угадывание поведения ботов. Числа случайны по сиду, и наилучший ответ в каждом дне в своём диапазоне
+   (день 1 — 600–750, день 2 — 100–200, день 3 — 290–340); шока спроса на экзамене нет — оценивается решение, а не удача: «всегда одно число» не проходит.
+   День 3 — выбор: вступить в сговор (тогда все трое везут квоту совместной монополии на остаточном спросе
+   и платят ожидаемый штраф p·F) или отказаться (тогда двое возят по Курно с тобой). Без штрафа вступать выгодно
+   (выигрыш R²/(48b) ≈ 1 300–2 000 ₽), ожидаемый штраф 5 000 ₽ (Рубцов на ярмарке, p = 20%) решение переворачивает.
+   Оценка дня — по марже до фиксированной платы: 1 − √(1 − маржа/маржа*). */
 const FAIR_EXAM_KINDS = [
   { kind: "cournot", title: "Остались трое" },
   { kind: "entry", title: "Новый продавец" },
@@ -357,42 +382,59 @@ const fairExamOpen = (f) => (f.chapter || 1) >= 3 && f.day >= FAIR.examFromDay;
 function fairExamNew(f, seed) {
   const rng = lavkaRng(seed), pick = (lo, hi) => lo + Math.floor(rng() * (hi - lo + 1));
   const days = FAIR_EXAM_KINDS.map((k) => {
-    let rivals, text, quota = null;
+    let rivals, text, S = null;
     if (k.kind === "cournot") {
-      rivals = [pick(20, 60) * 10, pick(20, 60) * 10];
+      const sum = pick(10, 40) * 10, s1 = Math.round((sum * (0.35 + 0.3 * rng())) / 10) * 10;
+      rivals = [s1, sum - s1];
       text = `Студенты и «Зоин квас» уехали. Семён везёт ${rivals[0]}, Илья — ${rivals[1]}. Сколько везёшь ты?`;
     } else if (k.kind === "entry") {
-      rivals = [pick(30, 50) * 10, pick(30, 50) * 10, pick(20, 40) * 10];
-      text = `Приехал фургон «Квас с горы» — ${rivals[2]} стаканов. Семён и Илья не перестроились: ${rivals[0]} и ${rivals[1]}. Сколько везёшь ты?`;
+      const nb = pick(20, 40) * 10, rest = pick(120, 140) * 10 - nb, s1 = Math.round((rest * (0.4 + 0.2 * rng())) / 10) * 10;
+      rivals = [s1, rest - s1, nb];
+      text = `Приехал фургон «Квас с горы» — ${nb} стаканов. Семён и Илья не перестроились: ${rivals[0]} и ${rivals[1]}. Сколько везёшь ты?`;
     } else {
-      quota = pick(15, 25) * 10;
-      rivals = [pick(20, 50) * 10, quota, quota];
-      text = `Последний день. Илья и новичок договорились возить по ${quota} и зовут тебя в долю с той же квотой. Семён везёт ${rivals[0]}. ` +
-        `Рубцов на ярмарке: раскроет сговор с вероятностью 8%, штраф 25 000 ₽ (ожидаемо 2 000 ₽). Вступишь — и сколько везёшь?`;
+      S = pick(24, 44) * 10;
+      rivals = [S];
+      text = `Последний день. Семён везёт ${S}. Илья и новичок зовут тебя в договор: все трое везём квоту поровну — столько, чтобы на троих вышла монопольная прибыль на том спросе, что оставил Семён. ` +
+        `Откажешься — они будут возить по Курно (каждый ждёт рационального ответа). Рубцов сегодня прямо на ярмарке: раскроет сговор с вероятностью 20%, штраф 25 000 ₽ — ожидаемо 5 000 ₽. Вступаешь? Если нет — сколько везёшь?`;
     }
-    return { kind: k.kind, title: k.title, text, rivals, quota, seed: Math.floor(rng() * 2 ** 31) };
+    return { kind: k.kind, title: k.title, text, rivals, S, seed: Math.floor(rng() * 2 ** 31) };
   });
   return { seed, results: [], days };
 }
-/* Маржа дня экзамена (до платы 3 000): (P − c)·x − ожидаемый штраф, если вступил в сговор. */
-function fairExamMargin(f, d, ans, aReal = FAIR.a) {
-  const x = Math.max(0, Math.round(ans.q)), c = fairMCbase(f);
-  const P = Math.max(0, aReal - FAIR.b * (x + d.rivals.reduce((s, v) => s + v, 0)));
-  return { margin: (P - c) * x - (d.kind === "cartel" && ans.join ? FAIR.inspectP * FAIR.fine : 0), P, x };
+/* День «картель»: остаточный спрос после Семёна R = a − b·S − c; квота каждого из троих R/(6b), Курно каждого R/(4b). */
+function fairExamCartel(d, c = FAIR.c) {
+  const R = FAIR.a - FAIR.b * d.S - c;
+  return { R, quota: R / (6 * FAIR.b), cournot: R / (4 * FAIR.b), joinGain: (R * R) / (48 * FAIR.b) };
 }
-/* Эталон: наилучший ответ на объявленные объёмы; в сговоре — лучшее из «вступить и держать квоту» и «не вступать». */
+/* Маржа дня экзамена (до платы 3 000). На экзамене бочки нет: Гена выкупил её в конце ярмарки (MC = 20). */
+function fairExamMargin(f, d, ans, aReal = FAIR.a) {
+  const c = FAIR.c;
+  if (d.kind === "cartel") {
+    const ct = fairExamCartel(d, c);
+    if (ans.join) {
+      const x = ct.quota, P = Math.max(0, aReal - FAIR.b * (d.S + 3 * x));
+      return { margin: (P - c) * x - FAIR.examInspectP * FAIR.fine, P, x, others: 2 * x };
+    }
+    const x = Math.max(0, Math.round(ans.q)), P = Math.max(0, aReal - FAIR.b * (d.S + 2 * ct.cournot + x));
+    return { margin: (P - c) * x, P, x, others: 2 * ct.cournot };
+  }
+  const x = Math.max(0, Math.round(ans.q)), others = d.rivals.reduce((s, v) => s + v, 0);
+  const P = Math.max(0, aReal - FAIR.b * (x + others));
+  return { margin: (P - c) * x, P, x, others };
+}
+/* Эталон: наилучший ответ на объявленные объёмы; в день «картель» — лучшее из «вступить» и «отказаться + Курно». */
 function fairExamBest(f, d) {
-  const c = fairMCbase(f), br = Math.round(fairBR(d.rivals.reduce((s, v) => s + v, 0), c));
-  if (d.kind !== "cartel") return { q: br, join: false };
-  const out = fairExamMargin(f, d, { q: br, join: false }).margin, inn = fairExamMargin(f, d, { q: d.quota, join: true }).margin;
-  return inn > out ? { q: d.quota, join: true } : { q: br, join: false };
+  if (d.kind !== "cartel") return { q: Math.round(fairBR(d.rivals.reduce((s, v) => s + v, 0), FAIR.c)), join: false };
+  const ct = fairExamCartel(d), out = fairExamMargin(f, d, { q: Math.round(ct.cournot), join: false }).margin;
+  const inn = fairExamMargin(f, d, { join: true }).margin;
+  return inn > out ? { q: Math.round(ct.quota), join: true } : { q: Math.round(ct.cournot), join: false };
 }
 function fairExamPlayDay(f, exam, ans) {
   const i = exam.results.length, d = exam.days[i];
-  const aReal = FAIR.a * (1 + FAIR.noise * (2 * lavkaRng(d.seed)() - 1));
+  const aReal = FAIR.a;
   const a = typeof ans === "number" ? { q: ans, join: false } : ans;
   const best = fairExamBest(f, d), me = fairExamMargin(f, d, a, aReal), bot = fairExamMargin(f, d, best, aReal);
-  const res = { q: me.x, join: !!a.join, botQ: best.q, botJoin: best.join, P: me.P, Qr: d.rivals.reduce((s, v) => s + v, 0),
+  const res = { q: me.x, join: !!(d.kind === "cartel" && a.join), botQ: best.q, botJoin: best.join, P: me.P, Qr: me.others,
     playerMargin: me.margin, botMargin: bot.margin, botProfit: bot.margin - FAIR.fee };
   return { exam: { ...exam, results: [...exam.results, res] }, result: res, done: exam.results.length + 1 === exam.days.length };
 }
@@ -400,14 +442,20 @@ function fairExamResult(exam) {
   if (!exam.results.length || exam.results.some((r) => !(r.botMargin > 0))) return null;
   const days = exam.results.map((r) => Math.max(0, 1 - Math.sqrt(Math.max(0, 1 - Math.min(1, r.playerMargin / r.botMargin)))));
   const eff = days.reduce((s, x) => s + x, 0) / days.length, minDay = Math.min(...days);
-  const piBot = exam.results.reduce((s, r) => s + r.botProfit, 0) / exam.results.length;
-  return { eff, minDay, days, piBot, medal: lavkaExamMedal(eff, minDay) };
+  return { eff, minDay, days, medal: lavkaExamMedal(eff, minDay) };
+}
+/* π̄_эт для дивиденда дочки — не по удаче одной попытки, а матожидание прибыли эталона по распределению экзамена
+   (200 фиксированных сидов, без шока спроса): так дивиденд зависит от навыка (e), а не от лотереи сида. */
+function fairExamExpectedProfit(f) {
+  let sum = 0, n = 0;
+  for (let s = 1; s <= 200; s++) for (const d of fairExamNew(f, 7919 * s).days) { sum += fairExamMargin(f, d, fairExamBest(f, d)).margin - FAIR.fee; n++; }
+  return sum / n;
 }
 function fairExamFinish(f, exam) {
   const res = fairExamResult(exam), prev = f.examBest || { eff: -Infinity, medal: null, attempts: 0 };
   const better = !!res && res.eff > prev.eff;
   return { ...f, examActive: null, examBest: { eff: better ? res.eff : prev.eff, medal: better ? (res.medal ? res.medal.id : null) : prev.medal,
-    piBot: better ? res.piBot : prev.piBot, day: better ? f.day : prev.day, attempts: (prev.attempts || 0) + 1 } };
+    piBot: fairExamExpectedProfit(f), day: better ? f.day : prev.day, attempts: (prev.attempts || 0) + 1 } };
 }
 
 export {
@@ -415,6 +463,6 @@ export {
   fairK, fairKbar, fairPlaces, fairTax, fairFixed, fairCournot, fairNashCosts, fairNashAsym, fairBR, fairFollowers, fairStackelberg,
   fairCartelMath, fairCartelVsThird, fairBarrelNPV, fairOwns, fairMCbase, fairMC, fairRivalMC, fairBuy, fairNewState, fairRivalX,
   fairInCartel, fairRivalsToday, fairFit, fairMargins, fairEntrantProfit, fairEntryOpen, fairSimulate, fairAnswerOffer, fairLeaveCartel,
-  fairVerdict, levelFinish, fairExamOpen, fairExamNew, fairExamMargin, fairExamBest, fairExamPlayDay, fairExamResult, fairExamFinish,
+  fairVerdict, levelFinish, fairExamOpen, fairExamNew, fairExamCartel, fairExamExpectedProfit, fairCheatTradeoff, fairCartelEndDay, fairExamMargin, fairExamBest, fairExamPlayDay, fairExamResult, fairExamFinish,
   annuity, lavkaRng,
 };

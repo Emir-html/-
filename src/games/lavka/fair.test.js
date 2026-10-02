@@ -60,7 +60,8 @@ test("вход: Илья на 10-й день, ещё двое на 15-й, шес
     firms.push(st.rivals.length + 1);
   }
   assert.equal(firms[8], 3, "на 10-й день — трое"); assert.equal(firms[7], 2);
-  assert.equal(firms[13], 5, "с 15-го — пятеро"); assert.equal(firms[20], 5);
+  assert.equal(firms[13], 5, "с 15-го — пятеро (шестое место пустует: новичку не покрыть плату)"); assert.equal(firms[20], 5);
+  assert.equal(F.fairPlaces(16), 6);
   assert.ok(F.fairEntrantProfit(st, 6, 16) * F.fairKbar < F.FAIR.fee);
   assert.ok(F.fairEntrantProfit(st, 5, 16) * F.fairKbar > F.FAIR.fee);
 });
@@ -174,30 +175,52 @@ test("экзамен: открыт с 22-го дня в главе 3; 3 дня, 
   for (const d of e.days) ex = F.fairExamPlayDay(f, ex, F.fairExamBest(f, d)).exam;
   const res = F.fairExamResult(ex);
   near(res.eff, 1, 1e-9); assert.equal(res.medal.id, "gold");
-  assert.ok(res.piBot > 0 && res.piBot < 10000);
 });
 
-test("экзамен: сценарий 400 / 250 / 440 при объявленных объёмах; вступить в сговор хуже, чем остаться вне", () => {
+test("экзамен: наилучший ответ на объявленные объёмы; день «картель» — квота R/(6b) или Курно R/(4b), ожидаемый штраф переворачивает", () => {
   const f = examFair();
-  near(F.fairExamBest(f, { kind: "cournot", rivals: [400, 400] }).q, 400);
-  near(F.fairExamBest(f, { kind: "entry", rivals: [400, 400, 300] }).q, 250);
-  const d = { kind: "cartel", rivals: [320, 200, 200], quota: 200 };
+  near(F.fairExamBest(f, { kind: "cournot", rivals: [100, 200] }).q, 650);
+  near(F.fairExamBest(f, { kind: "entry", rivals: [500, 500, 300] }).q, 150);
+  const d = { kind: "cartel", rivals: [300], S: 300 };
+  const ct = F.fairExamCartel(d);
+  near(ct.R, 65); near(ct.quota, 65 / 0.3); near(ct.cournot, 325); near(ct.joinGain, 65 * 65 / 2.4);
+  assert.ok(ct.joinGain > 0 && ct.joinGain < F.FAIR.examInspectP * F.FAIR.fine, "без штрафа вступать выгодно, со штрафом — нет");
   const best = F.fairExamBest(f, d);
-  assert.equal(best.join, false); near(best.q, 440);
-  near(F.fairExamMargin(f, d, { q: 440, join: false }).margin, 9680);
-  near(F.fairExamMargin(f, d, { q: 200, join: true }).margin, 6800 - 2000);
+  assert.equal(best.join, false); near(best.q, 325);
+  near(F.fairExamMargin(f, d, { q: 325 }).margin, (100 - 0.05 * (300 + 650 + 325) - 20) * 325);
+  near(F.fairExamMargin(f, d, { join: true }).margin, (100 - 0.05 * (300 + 650) - 20) * (650 / 3) - 5000, 1e-6);
 });
 
-test("экзамен: «всегда 400» — серебро не чаще 10% попыток (случайное попадание); «вступил и держит квоту» — без медали", () => {
+test("экзамен: ни одна постоянная стратегия и «всегда вступать в сговор» медали не получают", () => {
   const f = examFair();
   const run = (pick, seed) => { let ex = F.fairExamNew(f, seed); for (const d of ex.days) ex = F.fairExamPlayDay(f, ex, pick(d)).exam; return F.fairExamResult(ex); };
-  let silver400 = 0, silverJoin = 0;
-  for (let s = 0; s < 200; s++) {
-    const r1 = run(() => ({ q: 400, join: false }), 300 + s);
-    if (r1.medal && r1.medal.id !== "bronze") silver400++;
-    const r2 = run((d) => (d.kind === "cartel" ? { q: d.quota, join: true } : F.fairExamBest(f, d)), 300 + s);
-    if (r2.medal) silverJoin++;
+  for (const c of [200, 300, 320, 400, 500, 600]) {
+    let medals = 0;
+    for (let s = 0; s < 100; s++) if (run(() => ({ q: c }), 300 + s).medal) medals++;
+    assert.ok(medals <= 5, `«всегда ${c}»: медаль в ${medals} из 100`);
   }
-  assert.ok(silver400 <= 20, `«всегда 400»: серебро в ${silver400} из 200`);
-  assert.equal(silverJoin, 0, `сговор: медаль в ${silverJoin} из 200`);
+  let join = 0;
+  for (let s = 0; s < 100; s++) if (run((d) => (d.kind === "cartel" ? { join: true } : F.fairExamBest(f, d)), 300 + s).medal) join++;
+  assert.equal(join, 0, `сговор: медаль в ${join} из 100`);
+});
+
+test("экзамен: π̄_эт — матожидание прибыли эталона (не зависит от сида попытки); на экзамене MC = 20 (бочку выкупили)", () => {
+  const f = examFair();
+  const pi = F.fairExamExpectedProfit(f);
+  assert.ok(pi > 3000 && pi < 10000, `${pi}`);
+  const withBarrel = { ...f, upgrades: { barrel: { day: 8, sold: 21 } } };
+  near(F.fairMCbase(withBarrel), 20); near(F.fairExamExpectedProfit(withBarrel), pi);
+  let ex = F.fairExamNew(f, 1);
+  for (const d of ex.days) ex = F.fairExamPlayDay(f, ex, F.fairExamBest(f, d)).exam;
+  near(F.fairExamFinish(f, ex).examBest.piBot, pi);
+});
+
+test("картель на конечном горизонте: обман на 9-й день не наказуем (договор кончается на 10-й) — выгоден; на 5-й — нет", () => {
+  const t9 = F.fairCheatTradeoff(20, 20, 9), t5 = F.fairCheatTradeoff(30, 30, 5), t8 = F.fairCheatTradeoff(20, 20, 8);
+  assert.equal(t9.days, 0); assert.ok(t9.cheatPays);
+  assert.equal(t8.days, 1); assert.ok(t8.cheatPays, "один день наказания (1 778) меньше выигрыша (2 000)");
+  assert.equal(t5.days, 4); assert.ok(!t5.cheatPays);
+  /* Покупка бочки расторгает договор: квоты были рассчитаны при прежних MC. */
+  const st = F.fairAnswerOffer({ ...F.fairNewState(1e6), day: 8, chapter: 2, offer: { day: 5 } }, true);
+  assert.equal(F.fairBuy(st, "barrel").cartel.active, false);
 });

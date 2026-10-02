@@ -1,170 +1,122 @@
-/* Тесты уровня 3 «Сеть кофеен»: node --test chain.test.js
-   Две кухни (MR = MC₁ = MC₂), спад и закрытие (короткий и длинный период), оптовая скидка и мощность, переход с уровня 2. */
+/* Тесты уровня 3 «Сеть кофеен» (сценарий «Путь компании»): node --test chain.test.js
+   Две кофейни с местами (λ), две кухни (MC₁ = MC₂), Зоя («сделать или купить»), скидка на все единицы, вход Семёна,
+   правило закрытия по устранимым издержкам, min AC кухни 1, экзамен. */
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as C from "./chain.js";
 import * as F from "./fair.js";
+import * as K from "./capital.js";
 import * as L from "./model.js";
 
 const near = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) <= eps, `${a} ≉ ${b}`);
+const st0 = () => C.chainNewState(1e5);
+const plan = (st, day) => C.chainPlan(C.chainDay(st, day));
 
-test("издержки кухни: MC = w + base + 2b·q, AVC = w + base + b·q, VC = (w + base)·q + b·q²", () => {
-  const k = C.CHAIN.kitchens[0];
-  near(C.chainMC(k, 10, 20), 20 + k.base + 2 * k.b * 10);
-  near(C.chainVC(k, 10, 20), (20 + k.base) * 10 + k.b * 100);
-  near(C.chainVC(k, 10, 20) / 10, 20 + k.base + k.b * 10);
+test("будни недели 1: N 140 × 130 (λ_N = 26), T 100 × 80, кухни 40 / 160, Зоя 40, маржа 20 040", () => {
+  const p = plan(st0(), 4);
+  assert.equal(p.qN, 140); near(p.PN, 130); assert.equal(p.qT, 100); near(p.PT, 80);
+  assert.deepEqual(p.q, [40, 160]); assert.equal(p.z, 40); near(p.mc, 34); near(p.lambdaN, 26);
+  near(p.varMargin, 20040);
 });
 
-test("две кухни: оптимум MR = MC₁ = MC₂ (без скидки и упора в мощность)", () => {
-  const plan = C.chainPlan({ A: 300, w: 20, open: [true, true], caps: [999, 999], discount: false });
-  const [k1, k2] = C.CHAIN.kitchens;
-  const mr = 300 - 2 * plan.Q;
-  near(mr, C.chainMC(k1, plan.q[0], 20), 0.05); near(mr, C.chainMC(k2, plan.q[1], 20), 0.05);
-  near(plan.Q, 3 * (620 / 7) - 160, 0.2); // аналитически: MC = 620/7
+test("пятница λ_N = 38,7; суббота: T пустеет (54 × 76,8), N 146,2, своя выпечка без Зои", () => {
+  const fri = plan(st0(), 5); near(fri.PN, 136.36, 0.01); near(fri.lambdaN, 38.7, 0.05); near(fri.varMargin, 20931, 1);
+  const sat = plan(st0(), 6); assert.equal(sat.qT, 54); near(sat.PN, 146.15, 0.01); assert.equal(sat.z, 0); near(sat.lambdaN, 58.7, 0.1);
 });
 
-test("кухня без выпуска, если её MC при нуле выше MR (угловое решение)", () => {
-  const plan = C.chainPlan({ A: 95, w: 20, open: [true, true], caps: [999, 999], discount: false });
-  assert.equal(plan.q[1], 0);
-  assert.ok(95 - 2 * plan.Q < C.chainMC(C.CHAIN.kitchens[1], 0, 20));
+test("Семён напротив (A ×0,8, B ×1,1): места больше не дефицит, маржа 13 432; с закрытой кухней 1 — 13 352", () => {
+  const p = plan(st0(), 11);
+  assert.equal(p.qN, 123); near(p.lambdaN, 0); near(p.varMargin, 13432, 1);
+  near(plan({ ...st0(), k1Closed: true }, 11).varMargin, 13352, 1);
 });
 
-test("спад: короткий период — заводская кухня покрывает AVC (работать), длинный — не покрывает аренду (закрыть)", () => {
-  const a = C.chainShutdownMath(200);
-  assert.ok(a.contribution2 > 0, "вклад кухни 2 сверх переменных издержек > 0 → в коротком периоде работать");
-  assert.ok(a.contribution2 < C.CHAIN.kitchens[1].F, "но меньше её аренды");
-  assert.ok(a.profitOnlyK1 > a.profitBoth, "в длинном периоде без кухни 2 прибыль выше");
-  const b = C.chainShutdownMath(300);
-  assert.ok(b.profitBoth > b.profitOnlyK1, "при обычном спросе вторая кухня нужна");
+test("правило закрытия T: вклад 4 770 сверх выпечки > бариста 1 500 → оставить (с закрытой кухней 1: 3 190)", () => {
+  const t = C.chainTContribution(C.chainDay(st0(), 11));
+  near(t.beforeBarista, 4770, 1); near(t.contribution, 3270, 1);
+  near(C.chainTContribution(C.chainDay({ ...st0(), k1Closed: true }, 11)).contribution, 3190, 1);
 });
 
-test("оптовая скидка на все зёрна от 120 чашек: выгоднее добрать до порога, хотя MR = MC без скидки даёт меньше", () => {
-  const no = C.chainPlan({ A: 300, w: 20, open: [true, true], caps: [999, 999], discount: false });
-  const yes = C.chainPlan({ A: 300, w: 20, open: [true, true], caps: [999, 999], discount: true });
-  assert.ok(no.Q < C.CHAIN.discountQ);
-  near(yes.Q, C.CHAIN.discountQ, 0.3);
-  assert.ok(yes.profitVar > no.profitVar + 300, `${yes.profitVar} vs ${no.profitVar}`);
+test("кухня 1: min AC = 50 ₽ при 200 порциях > цены Зои 34 — сдать; MC₁ = MC₂ = цене Зои", () => {
+  const m = C.chainK1MinAC(); near(m.q, 200); near(m.ac, 50);
+  const p = plan(st0(), 4);
+  near(C.chainMC(C.CHAIN.kitchens[0], p.q[0]), 34); near(C.chainMC(C.CHAIN.kitchens[1], p.q[1]), 34);
 });
 
-test("мощность Садовой: при упоре MR = MC₂ < MC₁ + λ", () => {
-  const plan = C.chainPlan({ A: 300, w: 20, open: [true, true], caps: [30, 999], discount: false });
-  near(plan.q[0], 30);
-  const mr = 300 - 2 * plan.Q;
-  near(mr, C.chainMC(C.CHAIN.kitchens[1], plan.q[1], 20), 0.05);
-  assert.ok(mr > C.chainMC(C.CHAIN.kitchens[0], 30, 20), "место на Садовой ценно: λ > 0");
+test("Зоя 38 ₽ (с 17-го): кухня 2 печёт до MC = 38 (187), Зоя 31; N 91,8", () => {
+  const p = plan({ ...st0(), k1Closed: true }, 18);
+  assert.equal(p.q[1], 187); assert.equal(p.z, 31); near(p.PN, 91.8, 0.1); near(p.varMargin, 13164, 1);
 });
 
-test("день сети: цена расчищает рынок, прибыль = TR − VC − аренда открытых кухонь; скидка — по факту объёма", () => {
-  let st = C.chainNewState(20000); st.day = 15; st.chapter = 3; st.q = [50, 70];
-  const { next, report } = C.chainSimulate(st, L.lavkaRng(1));
-  assert.equal(report.w, 14, "Q = 120 → скидка");
-  near(report.P, Math.max(0, report.A - 120));
-  const vc = C.chainVC(C.CHAIN.kitchens[0], 50, 14) + C.chainVC(C.CHAIN.kitchens[1], 70, 14);
-  near(report.profit, report.P * 120 - vc - C.CHAIN.kitchens[0].F - C.CHAIN.kitchens[1].F);
-  assert.equal(next.day, 16);
-  st = { ...st, q: [50, 69] };
-  assert.equal(C.chainSimulate(st, L.lavkaRng(1)).report.w, 20, "Q = 119 → без скидки");
+test("скидка на все единицы: от 250 своих порций выгодно испечь и с излишком (MC следующей продажи = 0)", () => {
+  const p = plan(st0(), 8);
+  assert.equal(p.own, 250); assert.ok(p.own > p.Q, "часть порций пропадёт — но скидка 2 ₽ на все 250 окупает");
+  assert.ok(p.varMargin > 20040);
+  const t = plan({ ...st0(), terrace: true }, 8); assert.equal(t.qN, 166); assert.equal(t.own, 250);
 });
 
-test("закрытие по договору: после уведомления аренда платится ещё 3 дня (кухня может работать), потом выпуск 0", () => {
-  let st = C.chainNewState(20000); st.day = 8; st.chapter = 2;
-  st = C.chainSetOpen(st, 1, false);
-  assert.equal(st.open[1], true); assert.equal(st.closeIn[1], C.CHAIN.noticeDays);
-  for (let d = 0; d < C.CHAIN.noticeDays; d++) {
-    const out = C.chainSimulate({ ...st, q: [40, 30] }, L.lavkaRng(2 + d));
-    assert.equal(out.report.q[1], 30, "в дни уведомления кухня работает — аренда всё равно уплачена");
-    near(out.report.fixed, C.CHAIN.kitchens[0].F + C.CHAIN.kitchens[1].F);
-    st = out.next;
-  }
-  assert.equal(st.open[1], false);
-  const r = C.chainSimulate({ ...st, q: [40, 30] }, L.lavkaRng(9)).report;
-  assert.equal(r.q[1], 0); near(r.fixed, C.CHAIN.kitchens[0].F);
-  const re = C.chainSetOpen(st, 1, true);
-  assert.equal(re.open[1], true); assert.equal(re.cash, st.cash - C.CHAIN.reopenCost);
-  const cancel = C.chainSetOpen(C.chainSetOpen(C.chainNewState(1000), 1, false), 1, true);
-  assert.equal(cancel.closeIn[1], 0); assert.equal(cancel.cash, 1000, "отмена уведомления бесплатна");
+test("день сети: прибыль = выручка − выпечка − Зоя − устранимые − неустранимые; T закрыта — бариста не платится", () => {
+  const st = { ...st0(), day: 4, pN: 130, pT: 80, q: [40, 160] };
+  const { report } = C.chainSimulate(st, () => 0.5);
+  near(report.revenue, 140 * 130 + 100 * 80); near(report.z, 40); near(report.zoyaCost, 1360);
+  near(report.profit, report.revenue - report.ownCost - 1360 - 5000 - 8000);
+  const closed = C.chainSimulate({ ...st0(), day: 11, tOpen: false, pN: 90, q: [40, 160] }, () => 0.5).report;
+  near(closed.avoid, 1500 + 2000); near(closed.sold[1], 0);
+  assert.equal(C.chainSetT({ ...st0(), day: 5 }, false).tOpen, true, "до 11-го дня T не закрыть");
 });
 
-test("главы по дням: спад с 8-го, опт с 15-го; цель «две кухни» — MR ≈ MC₁ ≈ MC₂", () => {
-  let st = C.chainNewState(20000); st.day = 7;
-  const plan = C.chainPlan({ A: 300, w: 20, open: [true, true], caps: C.CHAIN.kitchens.map((k) => k.cap), discount: false });
-  st.q = plan.q.map(Math.round);
-  const out = C.chainSimulate(st, L.lavkaRng(3));
-  assert.equal(out.next.chapter, 2);
-  assert.ok(out.report.newGoals.includes("twokitchens"));
-  assert.equal(C.chainA({ ...st, chapter: 2 }), 200);
-  assert.equal(C.chainA({ ...st, chapter: 3 }), 300);
+test("цели: MC₁ = MC₂ в неделю 1, «невозвратные» на 12-й, «долгий период» при сдаче кухни 1", () => {
+  const r1 = C.chainSimulate({ ...st0(), day: 4, pN: 130, pT: 80, q: [40, 160] }, () => 0.5).report;
+  assert.ok(r1.newGoals.includes("multiplant")); assert.ok(r1.newGoals.includes("makebuy")); assert.ok(r1.newGoals.includes("seats"));
+  const r12 = C.chainSimulate({ ...st0(), day: 12, chapter: 2, pN: 90, pT: 80, q: [40, 160] }, () => 0.5).report;
+  assert.ok(r12.newGoals.includes("sunk"));
+  const closed = C.chainCloseK1({ ...st0(), day: 14, chapter: 2 });
+  assert.ok(closed.k1Closed);
+  assert.ok(C.chainSimulate({ ...closed, pN: 90, q: [0, 160] }, () => 0.5).report.newGoals.includes("kitchen1"));
 });
 
-test("переход с уровня 2: только с медалью экзамена ярмарки; дочки копятся в холдинге", () => {
-  const l1 = L.lavkaNewState(); l1.examBest = { eff: 0.9, medal: "silver", attempts: 1 };
-  const s2 = F.levelFinish(l1, "keep");
-  assert.equal(C.levelFinish2(s2, "sell"), null, "без медали ярмарки нельзя");
-  s2.fair.examBest = { eff: 0.96, medal: "gold", attempts: 1 };
-  const kept = C.levelFinish2(s2, "keep");
-  assert.equal(kept.level, 3);
-  assert.equal(kept.chain.subsidiaries.length, 2, "лавка + ярмарка");
-  assert.equal(kept.chain.subsidiaries[1].dividend, C.LEVEL2_DIVIDEND.gold);
-  const sold = C.levelFinish2(s2, "sell");
-  assert.equal(sold.chain.cash, C.CHAIN.grant + Math.round(C.chainSalePrice2("gold")), "касса ярмарки уходит в архив, как и касса лавки");
+test("вердикт: очередь в N при низкой цене — «продешевил»; кухня дороже Зои — подсказка", () => {
+  const r = C.chainSimulate({ ...st0(), day: 4, pN: 110, pT: 80, q: [100, 160] }, () => 0.5).report;
+  const v = C.chainVerdict(r, []);
+  assert.match(v, /продешевил/); assert.match(v, /Зоя печёт за 34/);
 });
 
-/* ===== Ревью экономиста (70%) ===== */
+/* ===== Экзамен ===== */
+const examChain = () => ({ ...st0(), day: 22, chapter: 3 });
 
-test("вердикт в оптимуме главы 3 (порог скидки, Садовая в упоре) не советует переносить и варить меньше", () => {
-  const st = C.chainNewState(1e5); st.day = 15; st.chapter = 3;
-  st.obs = [[100, 200], [110, 190], [120, 180]].map(([Q, P], i) => ({ day: 15 + i, Q, P, chapter: 3 })); // своя оценка спроса
-  st.q = C.chainPlan({ A: 300, w: 20, open: [true, true], caps: C.CHAIN.kitchens.map((k) => k.cap), discount: true }).q.map(Math.round);
-  const r = C.chainSimulate(st, L.lavkaRng(1)).report;
-  const v = C.chainVerdict(r);
-  assert.ok(!/перенеси/.test(v) && !/вари меньше/.test(v), v);
-  assert.match(v, /пороге скидки/); assert.match(v, /λ/);
-});
-
-test("спад: вывод про закрытие условный; цель «Длинный период» — закрытие + правильный выпуск", () => {
-  let st = C.chainNewState(1e5); st.day = 8; st.chapter = 2;
-  const v = C.chainVerdict(C.chainSimulate({ ...st, q: [30, 30] }, L.lavkaRng(1)).report);
-  assert.match(v, /коротком периоде/); assert.match(v, /не равно закрыть фирму|≠ закрыть фирму/);
-  st = C.chainSetOpen(st, 1, false);
-  assert.ok(!C.chainSimulate({ ...st, q: [5, 5] }, L.lavkaRng(1)).report.newGoals.includes("exit"), "закрыл, но выпуск далёк от плана");
-  const plan = C.chainPlan({ A: 200, w: 20, open: st.open, caps: C.CHAIN.kitchens.map((k) => k.cap), discount: false });
-  assert.ok(C.chainSimulate({ ...st, q: plan.q.map(Math.round) }, L.lavkaRng(1)).report.newGoals.includes("exit"));
-});
-
-test("оценка спроса — только по наблюдениям текущей главы", () => {
-  const st = C.chainNewState(1e5); st.day = 10; st.chapter = 2;
-  st.obs = [[1, 100, 200], [2, 110, 190], [3, 90, 210], [8, 60, 140], [9, 70, 130], [10, 50, 150]].map(([day, Q, P]) => ({ day, Q, P, chapter: day < 8 ? 1 : 2 }));
-  const r = C.chainSimulate({ ...st, q: [30, 30] }, L.lavkaRng(1)).report;
-  near(r.fit.A, 200, 1e-6); near(r.fit.B, 1, 1e-6);
-});
-
-/* ===== Экзамен уровня 3 ===== */
-
-const examChain = () => { const c = C.chainNewState(1e5); c.day = 22; c.chapter = 3; return c; };
-
-test("экзамен уровня 3: открыт в главе 3 с 22-го дня; 4 сценария со случайными параметрами", () => {
+test("экзамен: 3 дня, детерминирован сидом; эталон = 100%; на практике студентов иногда T не открывать", () => {
   const c = examChain();
-  assert.equal(C.chainExamOpen(c), true); assert.equal(C.chainExamOpen({ ...c, day: 21 }), false);
+  assert.equal(C.chainExamOpen(c), true);
   const e = C.chainExamNew(c, 3);
-  assert.deepEqual(e.days.map((d) => d.kind), ["two", "loss", "bulk", "cap"]);
+  assert.deepEqual(e.days.map((d) => d.kind), ["monday", "festival", "practice"]);
   assert.deepEqual(e.days, C.chainExamNew(c, 3).days);
-  const As = new Set(); for (let s = 0; s < 30; s++) As.add(C.chainExamNew(c, s).days[0].A);
-  assert.ok(As.size > 5, "спрос меняется от попытки к попытке");
+  let ex = e;
+  for (const d of e.days) ex = C.chainExamPlayDay(c, ex, C.chainExamBest(d)).exam;
+  near(C.chainExamResult(ex).eff, 1, 1e-6);
+  let closedT = 0, k1 = 0;
+  for (let s = 0; s < 40; s++) { const ds = C.chainExamNew(c, 100 + s).days; if (!C.chainExamBest(ds[2]).tOpen) closedT++; if (C.chainExamBest(ds[0]).k1Open) k1++; }
+  assert.ok(closedT > 0 && closedT < 40, `T закрыта в ${closedT} из 40`);
+  assert.equal(k1, 0, "Заводскую арендовать не выгодно: min AC > цены Зои");
 });
 
-test("экзамен уровня 3: оценка по решениям — оптимум 100%, «пополам» и «не закрывать» теряют, без расчётов нет серебра", () => {
+test("экзамен: «цены как в неделю 1, обе кухни, T открыта» — без серебра", () => {
   const c = examChain();
-  const run = (pick, seed = 5) => { let ex = C.chainExamNew(c, seed); for (let i = 0; i < 4; i++) ex = C.chainExamPlayDay(c, ex, pick(ex.days[i])).exam; return C.chainExamResult(ex); };
-  const best = run((d) => C.chainExamBest(d));
-  near(best.eff, 1, 1e-9); assert.equal(best.medal.id, "gold");
-  const noClose = run((d) => ({ ...C.chainExamBest(d), close: false }));
-  assert.ok(noClose.days[1] <= 0.5 + 1e-9, "в убыточной точке неверное решение о закрытии — половина дня");
   let silver = 0;
   for (let s = 0; s < 40; s++) {
-    const r = run(() => ({ q: [40, 50], close: false }), 100 + s);
-    if (r.medal && r.medal.id !== "bronze") silver++;
+    let ex = C.chainExamNew(c, 200 + s);
+    for (const d of ex.days) ex = C.chainExamPlayDay(c, ex, { pN: 130, pT: 80, q: [40, 160], tOpen: true, k1Open: true }).exam;
+    const r = C.chainExamResult(ex);
+    if (r && r.medal && r.medal.id !== "bronze") silver++;
   }
-  assert.ok(silver === 0, `«всегда 40 + 50» — серебро в ${silver} из 40`);
-  const after = C.chainExamFinish(c, { ...C.chainExamNew(c, 5), results: [] });
-  assert.equal(after.cash, c.cash);
+  assert.equal(silver, 0);
+});
+
+test("переход с уровня 2 через capital.js; дочки копятся", () => {
+  const f = { ...F.fairNewState(1e5), subsidiaries: [{ name: "Лавка", dividend: 900, daysLeft: 70 }] };
+  assert.equal(C.levelFinish2({ level: 2, fair: f }, "sell"), null);
+  f.examBest = { eff: 0.9, medal: "silver", piBot: 5000, attempts: 1 };
+  const kept = C.levelFinish2({ level: 2, fair: f }, "keep");
+  assert.equal(kept.level, 3); assert.equal(kept.chain.subsidiaries.length, 2);
+  assert.equal(kept.chain.subsidiaries[1].dividend, Math.round(0.3 * 0.9 * 5000)); assert.equal(kept.chain.subsidiaries[1].daysLeft, 72);
+  const sold = C.levelFinish2({ level: 2, fair: f }, "sell");
+  assert.equal(sold.chain.cash, K.CAPITAL.grant[3] + Math.round(K.capitalSalePrice(2, "silver")));
 });

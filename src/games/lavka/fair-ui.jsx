@@ -7,7 +7,7 @@ import {
   FAIR, FAIR_GOALS, FAIR_CHAPTERS, FAIR_UPGRADES,
   fairK, fairFixed, fairTax, fairMC, fairMCbase, fairCartelMath, fairRivalMC, fairInCartel, fairSimulate, fairVerdict, fairBuy, fairFit,
   fairBarrelNPV, fairRivalsToday, fairAnswerOffer, fairLeaveCartel, levelFinish,
-  fairExamOpen, fairExamNew, fairExamPlayDay, fairExamResult, fairExamFinish,
+  fairExamOpen, fairExamNew, fairExamPlayDay, fairExamResult, fairExamFinish, fairExamCartel,
 } from "./fair.js";
 import { LavkaStepper, LavkaAwning, LavkaCard, LevelFinishCapital } from "./components.jsx";
 import { LevelFinish2Card } from "./chain-ui.jsx";
@@ -53,7 +53,7 @@ function FairExam({ fair, setFair }) {
                 <div className="flex justify-between gap-2"><span>{k + 1}. {d.title}</span><span style={{ fontFamily: LAVKA_MONO }}>{res ? Math.round(res.days[k] * 100) + "%" : ""}</span></div>
                 <p className="text-xs" style={{ color: COLORS.inkSoft }}>
                   ты: {r.join ? "в сговоре, " : ""}{r.q} → маржа {lavkaRub(r.playerMargin)}; эталон: {r.botJoin ? "в сговоре, " : ""}{r.botQ} → {lavkaRub(r.botMargin)}
-                  {d.kind === "cartel" && !r.botJoin ? " (вне сговора: наилучший ответ и без штрафа)" : ""}
+                  {d.kind === "cartel" ? ` (без штрафа вступить дало бы +${lavkaFmt(fairExamCartel(d).joinGain)} ₽, а ожидаемый штраф 5 000 ₽; вне договора двое возят по Курно — ${Math.round(fairExamCartel(d).cournot)} каждый)` : ""}
                 </p>
               </div>
             );
@@ -72,11 +72,11 @@ function FairExam({ fair, setFair }) {
       <LavkaCard tint={COLORS.amberSoft}>
         <p className="font-semibold">День {i + 1}: {d.title}</p>
         <p className="text-sm mt-1">{d.text}</p>
-        <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Будний день: P = 100 − 0,05·Q (± шок 4%), твои MC = {fairMCbase(fair)} ₽, плата за место 3 000 ₽ — в любом случае.</p>
+        <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Будний день: P = 100 − 0,05·Q (без шока), твои MC = 20 ₽ (бочку Гена выкупил), плата за место 3 000 ₽ — в любом случае.</p>
       </LavkaCard>
       {d.kind === "cartel" && (
         <LavkaCard>
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={join} onChange={(e) => setJoin(e.target.checked)} /> Вступить в договор (квота {d.quota})</label>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={join} onChange={(e) => setJoin(e.target.checked)} /> Вступить в договор (тогда везёшь квоту — объём ниже не нужен)</label>
         </LavkaCard>
       )}
       <LavkaCard>
@@ -185,9 +185,9 @@ function FairScreen({ st, update }) {
           {fair.offer && (
             <LavkaCard tint={COLORS.amberSoft}>
               <p className="font-semibold">🤝 Семён предлагает договор</p>
-              <p className="text-sm mt-1">«Возим по {Math.round(fair.offer.qPlayer)}, цена будет {Math.round(fair.offer.P)} ₽ — тебе ≈ {lavkaFmt(fair.offer.cartelProfit)} ₽ в будни, а в Курно ≈ {lavkaFmt(fair.offer.cournotProfit)}.
+              <p className="text-sm mt-1">«Возим по {Math.round(fair.offer.qPlayer)} стаканов будня (в выходные — больше во столько же раз, во сколько больше людей), цена будет {Math.round(fair.offer.P)} ₽ — тебе ≈ {lavkaFmt(fair.offer.cartelProfit)} ₽ в будни, а в Курно ≈ {lavkaFmt(fair.offer.cournotProfit)}.
                 Привезёшь больше — {FAIR.punishDays} дней вожу как без договора».</p>
-              <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Сговор о ценах запрещён. Выигрыш договора — {lavkaFmt(fair.offer.cartelGain)} ₽ в будни; инспектор раскрывает сговор с вероятностью 8% в день, штраф 25 000 ₽ — ожидаемо {lavkaFmt(fair.offer.expFine)} ₽ в день. А покупатели платят больше.</p>
+              <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Сговор об объёмах и ценах запрещён. Выигрыш договора — {lavkaFmt(fair.offer.cartelGain)} ₽ в будни; инспектор раскрывает сговор с вероятностью 8% в день, штраф 25 000 ₽ — ожидаемо {lavkaFmt(fair.offer.expFine)} ₽ в день. А покупатели платят больше.</p>
               <div className="flex gap-2 mt-3 flex-wrap">
                 <button onClick={() => setFair((f) => fairAnswerOffer(f, false))} className="text-sm px-4 py-2 rounded-full" style={{ background: COLORS.onyx, color: COLORS.onyxText, fontWeight: 600 }}>Отказаться</button>
                 <button onClick={() => setFair((f) => fairAnswerOffer(f, true))} className="text-sm px-4 py-2 rounded-full" style={{ border: `1px solid ${COLORS.line}`, color: COLORS.ink }}>Договориться</button>
