@@ -9,7 +9,7 @@ import {
   LAVKA_WEEKDAYS, LAVKA_UPGRADES, LAVKA_EVENTS, LAVKA_GOALS, LAVKA_QUIZ, LAVKA_MONO,
   lavkaWeekday, lavkaUnlocked, lavkaOpenPoints, lavkaNewState, lavkaParams, lavkaSimulate, lavkaFit, lavkaFmt, lavkaRub,
   lavkaVerdict, lavkaLoad, lavkaShownLambda, lavkaStudyItems, lavkaPickQuiz, lavkaWeakTopics,
-  LAVKA_CHAPTERS, LAVKA_ORACLE_DAYS, lavkaChapterOf, lavkaUpgradeOpen,
+  LAVKA_CHAPTERS, LAVKA_ORACLE_DAYS, lavkaChapterOf, lavkaUpgradeOpen, lavkaIsStory, lavkaPlan,
   LAVKA_MEDALS, LAVKA_EXAM_FROM_DAY, lavkaExamOpen, lavkaExamMedal, lavkaExamDayState, lavkaExamNew, lavkaExamPlayDay,
   lavkaExamEfficiency, lavkaExamFinish, lavkaExamResult, lavkaExamStart,
 } from "./model.js";
@@ -47,10 +47,15 @@ function LavkaEventCard({ st }) {
             <p className="text-sm mt-1.5" style={{ color: COLORS.ink }}>Цена Семёна сегодня: <b style={{ fontFamily: LAVKA_MONO }}>{ev.compPrice} ₽</b></p>
           )}
           <p className="text-xs mt-1.5" style={{ color: COLORS.inkSoft }}>Осталось дней: {ev.daysLeft}</p>
+          {/* «Сначала опыт, потом термин» (П-31): в «Истории» теория события открывается после первого дня с ним. */}
+          {lavkaIsStory(st) && !(st.last && st.last.event && st.last.event.id === ev.id) ? (
+            <p className="text-xs mt-2" style={{ color: COLORS.inkSoft }}>Почему так — откроется вечером, после дня: сначала попробуй сам(а).</p>
+          ) : (
           <button onClick={() => setOpen(!open)} className="text-xs mt-2 flex items-center gap-1" style={{ color: COLORS.ink, fontWeight: 600 }}>
-            {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />} Что говорит теория
+            {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />} Почему? Что говорит теория
           </button>
-          {open && (
+          )}
+          {open && (!lavkaIsStory(st) || (st.last && st.last.event && st.last.event.id === ev.id)) && (
             <div className="mt-2 text-sm leading-relaxed" style={{ color: COLORS.ink }}>
               <p>{def.theory(ev)}</p>
               {moved.length > 0 && st.day <= LAVKA_ORACLE_DAYS && (
@@ -180,10 +185,16 @@ function LavkaDemandChart({ st, point, pid }) {
   const maxQ = Math.max(20, ...list.map(dn), fit ? fit.alpha : 0) * 1.1;
   const maxP = Math.max(20, ...list.map((o) => o.P), fit ? fit.alpha / fit.beta : 0, m.mc) * 1.1;
   const x = (q) => L + (q / maxQ) * (W - L - R), y = (p) => H - Bt - (p / maxP) * (H - Bt - T);
-  let opt = null;
+  let opt = null, lam = 0;
   if (fit) {
+    /* Теневая цена места по оценке тетради (П-28): план точки со спросом из МНК всех товаров на обычный день сегодня. */
+    const fits = Object.fromEntries(lavkaUnlocked(st).map((p) => [p, lavkaFit(st.obs[point]?.[p] || [])]));
+    if (Object.values(fits).every(Boolean)) {
+      const plan = lavkaPlan({ ...st, event: null }, point, (p, mm) => ({ A: fits[p].alpha * mm.k, B: fits[p].beta * mm.k }));
+      lam = lavkaShownLambda(plan.lambda);
+    }
     const choke = fit.alpha / fit.beta;
-    const pO = (choke + m.mc) / 2, qO = Math.max(0, fit.alpha - fit.beta * pO);
+    const pO = (choke + m.mc + lam) / 2, qO = Math.max(0, fit.alpha - fit.beta * pO);
     opt = { choke, pO, qO };
   }
   return (
@@ -209,6 +220,8 @@ function LavkaDemandChart({ st, point, pid }) {
             <circle cx={x(opt.qO)} cy={y(opt.pO)} r="5" fill={COLORS.ink} />
             <circle cx={x(opt.qO)} cy={y(m.mc)} r="3.5" fill={COLORS.blue} />
             <text x={W - R} y={y(m.mc) - 5} textAnchor="end" fontSize="10" fill={COLORS.rust}>MC</text>
+            {lam > 0 && <line x1={L} y1={y(m.mc + lam)} x2={W - R} y2={y(m.mc + lam)} stroke={COLORS.rust} strokeWidth="1.5" strokeDasharray="5 4" />}
+            {lam > 0 && <text x={W - R} y={y(m.mc + lam) - 5} textAnchor="end" fontSize="10" fill={COLORS.rust}>MC + λ</text>}
             <text x={x(fit.alpha / 2) + 4} y={y(0) - 6} fontSize="10" fill={COLORS.blue}>MR</text>
             <text x={x(fit.alpha) - 4} y={y(0) - 6} textAnchor="end" fontSize="10" fill={COLORS.sage}>D</text>
           </g>
@@ -234,7 +247,10 @@ function LavkaDemandChart({ st, point, pid }) {
         <div className="text-sm mt-3 leading-relaxed" style={{ color: COLORS.ink }}>
           <p>Оценка по {fit.n} дням: <b style={{ fontFamily: LAVKA_MONO }}>Q ≈ {fit.alpha.toFixed(1)} − {fit.beta.toFixed(2)}·P</b>, резервная цена ≈ {opt.choke.toFixed(1)} ₽.</p>
           <p className="mt-1">Выручка TR = P·Q = (α/β)·Q − Q²/β, поэтому MR = α/β − 2Q/β: у линейного спроса MR начинается там же, а падает вдвое круче.</p>
-          <p className="mt-1">MC = {m.mc.toFixed(1)} ₽. MR = MC при Q* ≈ {opt.qO.toFixed(1)}, цену берём со спроса: <b>P* ≈ {opt.pO.toFixed(1)} ₽</b>.</p>
+          {lam > 0
+            ? <p className="mt-1">По оценке тетради прилавок сегодня — узкое место: место у окошка стоит λ ≈ {lam.toFixed(0)} ₽ (пунктир «MC + λ»). Правило MR = MC + λ = {(m.mc + lam).toFixed(1)} ₽ при Q* ≈ {opt.qO.toFixed(1)} на обычный день: <b>P* ≈ {opt.pO.toFixed(1)} ₽</b>.</p>
+            : <p className="mt-1">MC = {m.mc.toFixed(1)} ₽. MR = MC при Q* ≈ {opt.qO.toFixed(1)}, цену берём со спроса: <b>P* ≈ {opt.pO.toFixed(1)} ₽</b>.</p>}
+          {st.event && <p className="mt-1" style={{ color: COLORS.rust }}>Сегодня событие «{LAVKA_EVENTS[st.event.id].title}»: линия построена по обычным дням — к сегодняшнему спросу её не прикладывай, учти, что событие меняет спрос или издержки</p>}
           <p className="mt-1" style={{ color: COLORS.inkSoft }}>Истина скрыта шумом ±8% — оценка уточняется с каждым днём, и тем точнее, чем шире разброс цен в наблюдениях: по трём почти одинаковым ценам наклон не определить. Постоянные издержки (аренда, зарплата) в эти расчёты не входят: на выбор цены они не влияют.</p>
         </div>
       )}
