@@ -8,12 +8,14 @@
 - `src/App.jsx` — приложение; `src/main.jsx` — вход Vite (сначала `storage-shim.js`, потом App)
 - `src/storage-shim.js` — `window.storage` поверх localStorage вне claude.ai
 - `src/state/progress-merge.js` — движок слияния прогресса (копия встроенного `ProgressMerge` в App.jsx)
-- `src/games/lavka/` — `model.js` (чистая логика), `ui.jsx` (экраны), `model.test.js`, `balance.js`
+- `src/games/lavka/` — уровень 1: `model.js` (логика), `ui.jsx` (экраны), `model.test.js`, `balance.js`, `exam-calibrate.js`;
+  уровень 2 «Ярмарка»: `fair.js`, `fair-ui.jsx`, `fair.test.js`, `fair-balance.js`; общие компоненты — `components.jsx`
+- Спецификации: `docs/LAVKA_SPEC.md` (уровень 1), `docs/FAIR_SPEC.md` (уровень 2); ревью — `docs/reviews/`
 - `src/ui/theme.js` — LIGHT_COLORS, DARK_COLORS, COLORS (изменяемый объект, тему переключает AppRoot), pageBackground, PAGE_BG_SIZE; `src/ui/SessionTimer.jsx` — таймер сессии
 - `docs/` — LAVKA_SPEC.md, ROADMAP.md, GAME_DESIGN.md; `docs/sources/` — выжимки уроков и CONCEPT_MAP.md
 - `data/` — экспорты прогресса Мира (не перезаписывать); `kit/` — исходный комплект как есть (не править)
 - Хук `.claude/hooks/check-after-edit.mjs` сам запускает `npm run check` после правки файлов в `src/`
-- Команды: `npm run dev`, `npm run build`, `npm test`, `npm run balance`
+- Команды: `npm run dev`, `npm run build`, `npm test`, `npm run balance`, `npm run balance:fair`, `npm run exam:calibrate`
 Общение с Миром — по-русски, коротко. «ок», «да» = одобрение, продолжай.
 
 ## Нельзя
