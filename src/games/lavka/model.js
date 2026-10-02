@@ -84,8 +84,33 @@ const LAVKA_CHAPTERS = [
 ];
 const LAVKA_ORACLE_DAYS = 7;
 const lavkaChapterOf = (kind, id) => (LAVKA_CHAPTERS.find((c) => c[kind].includes(id)) || LAVKA_CHAPTERS[0]).n;
-/* Улучшение доступно, если его глава открыта; купленное раньше остаётся навсегда. */
-const lavkaUpgradeOpen = (st, u) => !!st.upgrades[u.id] || lavkaChapterOf("upgrades", u.id) <= (st.chapter || 1);
+/* Режим «История» (сценарий «Путь компании», П-1…П-3): события идут по календарю, улучшения открываются по дням,
+   мороженого и оптовика на уровне 1 нет (оптовые скидки — на уровне 3). Режим «Сложнее» — прежний: случайные события
+   (45% в день), улучшения по главам, всё доступно. Старые сохранения без поля mode играют в «Сложнее». */
+const LAVKA_STORY_SHOP = { analyst: 3, helper: 7, fridge: 8, coffee: 10, sign: 12, office: 15 };
+const LAVKA_STORY_EVENTS = [
+  { day: 4, id: "flour", days: 2 },
+  { day: 9, id: "competitor", product: "lemonade", days: 4 },
+  { day: 13, id: "ceiling", product: "lemonade", days: 1 },
+  { day: 16, id: "tax", product: "lemonade", days: 2 },
+  { day: 18, id: "blogger", days: 2 },
+  { day: 20, id: "heat", days: 1 },
+];
+const lavkaIsStory = (st) => st.mode === "story";
+/* Улучшение доступно, если его глава открыта (в «Истории» — его день); купленное раньше остаётся навсегда. */
+const lavkaUpgradeOpen = (st, u) => !!st.upgrades[u.id] || (lavkaIsStory(st)
+  ? LAVKA_STORY_SHOP[u.id] != null && st.day >= LAVKA_STORY_SHOP[u.id]
+  : lavkaChapterOf("upgrades", u.id) <= (st.chapter || 1));
+/* Событие «Истории» на день day (или null). */
+function lavkaStoryEvent(st, day, rng = Math.random) {
+  const e = LAVKA_STORY_EVENTS.find((x) => x.day === day);
+  if (!e) return null;
+  const ev = lavkaMakeEvent({ ...st, day }, e.id, rng);
+  ev.daysLeft = e.days;
+  if (e.product) ev.product = e.product;
+  if (e.id === "ceiling") { const m = lavkaParams({ ...st, day, event: null }, "main", ev.product, true); ev.cap = Math.round(m.cBuy + 0.55 * (m.pOpt - m.cBuy)); }
+  return ev;
+}
 /* Старое сохранение без глав: глава по номеру дня, чтобы ничего не отнять. */
 const lavkaChapterByDay = (day) => [...LAVKA_CHAPTERS].reverse().find((c) => day >= c.fromDay).n;
 
@@ -165,15 +190,16 @@ function lavkaOpenPoints(st) {
 }
 
 function lavkaDefaultSettings() {
-  const d = { lemonade: [40, 50], croissant: [45, 50], coffee: [100, 30], icecream: [50, 40] };
+  /* Стартовые настройки (П-4): при прежних 40 / 50 и 45 / 50 в первый день без товара уходили ≈ 40% желающих. */
+  const d = { lemonade: [60, 40], croissant: [65, 38], coffee: [100, 30], icecream: [50, 40] };
   const one = () => Object.fromEntries(LAVKA_PIDS.map((p) => [p, { price: d[p][0], order: d[p][1] }]));
   return { main: one(), office: one() };
 }
 
-function lavkaNewState() {
+function lavkaNewState(mode = "story") {
   const empty = () => Object.fromEntries(LAVKA_PIDS.map((p) => [p, []]));
   return {
-    v: 1, model: LAVKA_MODEL_VERSION, at: Date.now(), day: 1, chapter: 1, cash: 2000, debt: 0,
+    v: 1, model: LAVKA_MODEL_VERSION, mode, at: Date.now(), day: 1, chapter: 1, cash: 2000, debt: 0,
     upgrades: {},
     settings: lavkaDefaultSettings(),
     stock: { main: {}, office: {} },
@@ -447,10 +473,11 @@ function lavkaSimulate(st, rng = Math.random) {
   const repNew = { main: 1, office: 1, ...(st.rep || {}) }, repDelta = {};
   for (const point of points) {
     const pr = rows.filter((r) => r.point === point);
-    const want = pr.reduce((s, r) => s + r.D, 0), lost = pr.reduce((s, r) => s + r.lostStock + r.lostQueue, 0);
-    const share = want > 0 ? lost / want : 0;
+    /* Не хватило товара — обида сильнее (0,3 × доля), не дождались в очереди — слабее (0,15 × доля; П-35). */
+    const want = pr.reduce((s, r) => s + r.D, 0), lostS = pr.reduce((s, r) => s + r.lostStock, 0), lostQ = pr.reduce((s, r) => s + r.lostQueue, 0);
+    const share = want > 0 ? (lostS + lostQ) / want : 0;
     const old = repNew[point];
-    const nv = share <= 0.03 ? old + 0.02 : old - 0.3 * share;
+    const nv = share <= 0.03 ? old + 0.02 : old - (want > 0 ? (0.3 * lostS + 0.15 * lostQ) / want : 0);
     repNew[point] = Math.round(Math.min(LAVKA_REP_MAX, Math.max(LAVKA_REP_MIN, nv)) * 1000) / 1000;
     repDelta[point] = { from: old, to: repNew[point], lostShare: share };
   }
@@ -514,7 +541,8 @@ function lavkaSimulate(st, rng = Math.random) {
       event = null;
     }
   }
-  if (!event && st.day >= 2 && rng() < 0.45) event = lavkaRollEvent(nextBase, rng);
+  if (lavkaIsStory(st)) { if (!event) event = lavkaStoryEvent(nextBase, st.day + 1, rng); }
+  else if (!event && st.day >= 2 && rng() < 0.45) event = lavkaRollEvent(nextBase, rng);
   if (event?.id === "competitor") event.compPrice = lavkaCompBR(nextBase, event.product, st.settings.main[event.product].price);
 
   let reward = 0;
@@ -584,11 +612,14 @@ const lavkaExamMedal = (eff, minDay = eff) => LAVKA_MEDALS.find((m) => eff >= m.
 function lavkaExamResult(exam) {
   const eff = lavkaExamEfficiency(exam);
   if (eff == null) return null;
-  const days = exam.results.map((r) => r.playerMargin / r.botMargin);
+  /* Доля маржи квадратична по ошибке цены (ошибка 10% даёт ≈ 95%), поэтому день оценивается через ошибку:
+     1 − √(1 − доля) ≈ 1 − |ΔP|/(P* − MC) — пороги 70/85/95% означают ошибку 30/15/5% наценки (П-7). */
+  const days = exam.results.map((r) => Math.max(0, 1 - Math.sqrt(Math.max(0, 1 - Math.min(1, r.playerMargin / r.botMargin)))));
   const minDay = Math.min(...days);
+  const eff2 = days.reduce((a, b) => a + b, 0) / days.length;
   /* π̄_эт — средняя дневная прибыль эталона (после постоянных издержек): от неё считается дивиденд дочки (capital.js). */
   const piBot = exam.results.reduce((s, r) => s + (r.bot || 0), 0) / exam.results.length;
-  return { eff, minDay, days, piBot, medal: lavkaExamMedal(eff, minDay) };
+  return { eff: eff2, share: eff, minDay, days, piBot, medal: lavkaExamMedal(eff2, minDay) };
 }
 
 /* Состояние лавки в i-й день экзамена: без запасов, без кассового ограничения, событие сценария.
@@ -837,7 +868,7 @@ function lavkaLoad(raw) {
     for (const p of Object.keys(obs)) for (const pid of Object.keys(obs[p])) obs[p][pid] = (obs[p][pid] || []).map((o) => ({ ...o, base: false }));
   }
   return {
-    ...fresh, ...s, model: LAVKA_MODEL_VERSION, obs,
+    ...fresh, ...s, model: LAVKA_MODEL_VERSION, obs, mode: s.mode || "hard", // старое сохранение — прежние правила («Сложнее»)
     chapter: s.chapter || lavkaChapterByDay(s.day || 1),
     settings: { main: { ...fresh.settings.main, ...(s.settings?.main || {}) }, office: { ...fresh.settings.office, ...(s.settings?.office || {}) } },
     stock: { main: { ...(s.stock?.main || {}) }, office: { ...(s.stock?.office || {}) } },
@@ -882,5 +913,5 @@ export {
   lavkaCeilingParadox, lavkaShownLambda, LAVKA_LAMBDA_SHOWN,
   lavkaRng, lavkaMakeEvent, LAVKA_EXAM_FROM_DAY, LAVKA_EXAM_KINDS, LAVKA_MEDALS, lavkaExamOpen, lavkaExamMedal,
   lavkaExamDayState, lavkaExamNew, lavkaExamBotSettings, lavkaExamPlayDay, lavkaExamEfficiency, lavkaExamFinish, lavkaExamResult, lavkaExamStart,
-  LAVKA_CHAPTERS, LAVKA_ORACLE_DAYS, lavkaChapterOf, lavkaUpgradeOpen, lavkaChapterByDay,
+  LAVKA_CHAPTERS, LAVKA_ORACLE_DAYS, lavkaChapterOf, lavkaUpgradeOpen, lavkaChapterByDay, LAVKA_STORY_SHOP, LAVKA_STORY_EVENTS, lavkaIsStory, lavkaStoryEvent,
 };

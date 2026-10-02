@@ -266,14 +266,42 @@ test("вердикт на потолке: «не весь спрос» — то�
 
 /* ===== Кривая сложности: главы уровня 1 и «оракул» только в первую неделю ===== */
 
-test("новая игра — глава 1: только события спроса и улучшения главы 1", () => {
-  const st = fresh();
+test("режим «Сложнее» — глава 1: только события спроса и улучшения главы 1", () => {
+  const st = L.lavkaNewState("hard");
   assert.equal(st.chapter, 1);
   for (let i = 0; i < 300; i++) assert.ok(["heat", "rain", "festival"].includes(L.lavkaRollEvent(st).id));
   const open = L.LAVKA_UPGRADES.filter((u) => L.lavkaUpgradeOpen(st, u)).map((u) => u.id).sort();
   assert.deepEqual(open, ["analyst", "fridge", "helper"]);
   st.chapter = 3;
   assert.equal(L.LAVKA_UPGRADES.filter((u) => L.lavkaUpgradeOpen(st, u)).length, L.LAVKA_UPGRADES.length);
+});
+
+test("режим «История»: события по календарю сценария, магазин по дням, без мороженого и оптовика; старое сохранение — «Сложнее»", () => {
+  let st = fresh();
+  assert.equal(st.mode, "story");
+  const seen = {};
+  for (let d = 1; d <= 21; d++) {
+    st.settings = JSON.parse(JSON.stringify(st.settings));
+    const out = L.lavkaSimulate(st, L.lavkaRng(d));
+    st = { ...out.next, cash: 1e5 };
+    if (st.event) seen[st.day] = st.event.id + (st.event.product ? ":" + st.event.product : "") + (st.event.cap ? ":" + st.event.cap : "");
+  }
+  assert.deepEqual(seen, { 4: "flour", 5: "flour", 9: "competitor:lemonade", 10: "competitor:lemonade", 11: "competitor:lemonade", 12: "competitor:lemonade",
+    13: "ceiling:lemonade:37", 16: "tax:lemonade", 17: "tax:lemonade", 18: "blogger", 19: "blogger", 20: "heat" });
+  const openOn = (day) => L.LAVKA_UPGRADES.filter((u) => L.lavkaUpgradeOpen({ ...fresh(), day }, u)).map((u) => u.id).sort();
+  assert.deepEqual(openOn(2), []); assert.deepEqual(openOn(3), ["analyst"]); assert.deepEqual(openOn(8), ["analyst", "fridge", "helper"]);
+  assert.deepEqual(openOn(21), ["analyst", "coffee", "fridge", "helper", "office", "sign"]);
+  assert.equal(L.lavkaLoad(JSON.stringify({ ...fresh(), mode: undefined })).mode, "hard");
+  near(fresh().settings.main.lemonade.price, 60); near(fresh().settings.main.croissant.order, 38);
+});
+
+test("лояльность: не хватило товара — обида 0,3 × доля, не дождались в очереди — 0,15 × доля", () => {
+  const st = fresh(); st.settings.main.lemonade = { price: 30, order: 500 }; st.settings.main.croissant = { price: 30, order: 500 };
+  const r = L.lavkaSimulate(st, L.lavkaRng(3)).report;
+  const rows = r.rows.filter((x) => x.point === "main"), want = rows.reduce((s, x) => s + x.D, 0);
+  const lostQ = rows.reduce((s, x) => s + x.lostQueue, 0), lostS = rows.reduce((s, x) => s + x.lostStock, 0);
+  assert.ok(lostQ > 0);
+  near(r.repDelta.main.to, Math.round(Math.max(0.8, 1 - (0.3 * lostS + 0.15 * lostQ) / want) * 1000) / 1000, 1e-9);
 });
 
 test("глава открывается, когда прошла неделя И выполнена ключевая цель", () => {

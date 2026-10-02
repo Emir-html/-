@@ -901,11 +901,12 @@ function LavkaScreen({ onBack, theme, onToggleTheme, studyBank }) {
             <div className="mt-6 text-center">
               {!confirmReset ? (
                 <button onClick={() => setConfirmReset(true)} className="text-xs flex items-center gap-1 mx-auto" style={{ color: COLORS.inkSoft }}>
-                  <RotateCcw size={12} /> Начать лавку заново
+                  <RotateCcw size={12} /> Начать лавку заново (сейчас: {st.mode === "story" ? "«История» — события по календарю" : "«Сложнее» — случайные события"})
                 </button>
               ) : (
-                <div className="flex gap-2 justify-center">
-                  <button onClick={() => { const f = lavkaNewState(); setSt(f); save(f); setConfirmReset(false); setTab("shop"); }} className="text-xs px-3 py-1.5 rounded-full" style={{ background: COLORS.rust, color: "#fff" }}>Да, сбросить всё</button>
+                <div className="flex gap-2 justify-center flex-wrap">
+                  <button onClick={() => { const f = lavkaNewState("story"); setSt(f); save(f); setConfirmReset(false); setTab("shop"); }} className="text-xs px-3 py-1.5 rounded-full" style={{ background: COLORS.rust, color: "#fff" }}>Заново: «История»</button>
+                  <button onClick={() => { const f = lavkaNewState("hard"); setSt(f); save(f); setConfirmReset(false); setTab("shop"); }} className="text-xs px-3 py-1.5 rounded-full" style={{ background: COLORS.rust, color: "#fff" }}>Заново: «Сложнее»</button>
                   <button onClick={() => setConfirmReset(false)} className="text-xs px-3 py-1.5 rounded-full" style={{ background: COLORS.paperDeep, color: COLORS.ink }}>Отмена</button>
                 </div>
               )}
