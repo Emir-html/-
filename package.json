@@ -13,7 +13,8 @@
     "check": "npm run build:check && npm test",
     "exam:calibrate": "node src/games/lavka/exam-calibrate.js",
     "balance:fair": "node src/games/lavka/fair-balance.js",
-    "balance:chain": "node src/games/lavka/chain-balance.js"
+    "balance:chain": "node src/games/lavka/chain-balance.js",
+    "balance:factory": "node src/games/lavka/factory-balance.js"
   },
   "dependencies": {
     "lucide-react": "^1.49.0",

@@ -10,6 +10,7 @@ import {
   chainExamOpen, chainExamNew, chainExamPlayDay, chainExamResult, chainExamFinish,
 } from "./chain.js";
 import { LavkaStepper, LavkaAwning, LavkaCard } from "./components.jsx";
+import { LevelFinish3Card } from "./factory-ui.jsx";
 
 /* Карточка на ярмарке: экзамен уровня 2 сдан с медалью → продать ярмарку или оставить дочкой. */
 function LevelFinish2Card({ st, update }) {
@@ -165,9 +166,7 @@ function ChainScreen({ st, update }) {
               <button onClick={() => setChain((c) => ({ ...c, examActive: chainExamNew(c, Math.floor(Math.random() * 2 ** 31)) }))} className="mt-3 text-sm px-4 py-2 rounded-full" style={{ background: COLORS.onyx, color: COLORS.onyxText, fontWeight: 600 }}>Сдать экзамен</button>
             </LavkaCard>
           )}
-          {chain.examBest && chain.examBest.medal && (
-            <LavkaCard tint={COLORS.sageSoft}><p className="text-sm">{LAVKA_MEDALS.find((m) => m.id === chain.examBest.medal).emoji} Уровень 3 сдан. Уровни 4 «Своё производство» и 5 «Холдинг» — в разработке.</p></LavkaCard>
-          )}
+          <LevelFinish3Card st={st} update={update} />
 
           {chain.day === 1 && !rep && (
             <LavkaCard tint={COLORS.sageSoft}>
