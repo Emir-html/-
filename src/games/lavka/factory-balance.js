@@ -3,10 +3,12 @@ import * as P from "./factory.js";
 import * as L from "./model.js";
 
 const DAYS = Number(process.argv[2] || 30), RUNS = Number(process.argv[3] || 20);
-const optL = (st) => Math.round(P.factoryLabor(P.factoryMarket(st)).L);
+const optL = (st) => P.factoryBestL(st);
 const strategies = {
   "оптимум + своя печь": (st) => ({ ...P.factoryBuyOven(st), L: optL(st) }),
   "оптимум, печь в аренду": (st) => ({ ...st, L: optL(st) }),
+  "в главе 3 держит монопсонические 14": (st) => ({ ...P.factoryBuyOven(st), L: st.chapter === 3 ? 14 : optL(st) }),
+  "покупает печь на 50-й день": (st) => ({ ...(st.day >= 50 ? P.factoryBuyOven(st) : st), L: optL(st) }),
   "игнорирует MRC (нанимает до MRP = w(L))": (st) => ({ ...P.factoryBuyOven(st), L: st.chapter === 1 ? optL(st) : Math.round(P.factoryCompetitiveEq().L) }),
   "всегда 20 работников": (st) => ({ ...P.factoryBuyOven(st), L: 20 }),
   "всегда 10 работников": (st) => ({ ...P.factoryBuyOven(st), L: 10 }),
@@ -16,7 +18,7 @@ for (const [name, fn] of Object.entries(strategies)) {
   let t = 0, g = 0;
   for (let i = 0; i < RUNS; i++) {
     let st = P.factoryNewState(1e5); const rng = L.lavkaRng(500 + i);
-    for (let d = 0; d < DAYS; d++) { const before = st.cash; st = fn(st); t -= before - st.cash; const out = P.factorySimulate(st, rng); t += out.report.profit; st = out.next; }
+    for (let d = 0; d < DAYS; d++) { const before = st.cash; st = fn(st); t -= before - st.cash; const out = P.factorySimulate(st, rng); t += out.report.profit + out.report.salvage; st = out.next; }
     g += Object.keys(st.goals).length;
   }
   rows.push({ стратегия: name, "прибыль пекарни (с покупкой печи)": Math.round(t / RUNS), "целей": (g / RUNS).toFixed(1) });

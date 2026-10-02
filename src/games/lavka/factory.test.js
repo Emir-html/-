@@ -36,8 +36,9 @@ test("МРОТ между монопсонической и конкурентн
   near(mw.w, 1800);
   near(mw.L, (1800 - P.FACTORY.supplyC) / P.FACTORY.supplyD); // упор в предложение труда
   assert.ok(mw.L > mono.L);
-  const high = P.factoryLabor({ market: "monopsony", wMin: 2600 });
-  assert.ok(high.L < P.factoryCompetitiveEq().L, "слишком высокий МРОТ снижает занятость (MRP = МРОТ)");
+  near(P.factoryLabor({ market: "monopsony", wMin: 2000 }).L, P.factoryCompetitiveEq().L, 1e-9); // максимум — при МРОТ = конкурентной
+  near(P.factoryLabor({ market: "monopsony", wMin: 2600 }).L, 14, 1e-9); // МРОТ = MRP(L_m): занятость как без МРОТ
+  assert.ok(P.factoryLabor({ market: "monopsony", wMin: 3000 }).L < 14, "МРОТ выше MRP(L_m) — занятость ниже монопсонической");
 });
 
 test("печь: аренда против покупки по NPV при ставке r", () => {
@@ -107,4 +108,32 @@ test("экзамен уровня 4: 4 задачи со случайными п
   assert.ok(highWage > 0, "иногда МРОТ выше конкурентной зарплаты — занятость падает");
   const after = P.factoryExamFinish(f, { ...e, results: [] });
   assert.equal(after.cash, f.cash);
+});
+
+/* ===== Ревью экономиста (70%) ===== */
+
+test("целочисленный оптимум найма по прибыли: 20 / 14 / 17", () => {
+  near(P.factoryBestL({ ...P.factoryNewState(), chapter: 1 }), 20);
+  near(P.factoryBestL({ ...P.factoryNewState(), chapter: 2 }), 14);
+  near(P.factoryBestL({ ...P.factoryNewState(), chapter: 3 }), 17);
+});
+
+test("вердикт главы 3 на углу МРОТ не зовёт нанимать: следующий работник поднимает зарплату всем", () => {
+  const st = { ...P.factoryNewState(1e5), day: 15, chapter: 3, L: 17 };
+  const v = P.factoryVerdict(P.factorySimulate(st, L.lavkaRng(1)).report);
+  assert.ok(!/нанимать ещё выгодно/.test(v), v);
+  assert.match(v, /следующ/);
+  const low = P.factoryVerdict(P.factorySimulate({ ...st, L: 10 }, L.lavkaRng(1)).report);
+  assert.ok(!/найм вырос/.test(low), "при 10 работниках не утверждаем, что найм вырос");
+});
+
+test("печь: NPV на оставшийся горизонт; цель — только если покупка выгодна в момент покупки; на 60-й день печь продаётся", () => {
+  assert.ok(P.factoryOvenMath(1).buyBetter); assert.ok(!P.factoryOvenMath(50).buyBetter, "на 50-й день аренда дешевле");
+  let late = P.factoryBuyOven({ ...P.factoryNewState(2e5), day: 50 });
+  assert.ok(!P.factorySimulate({ ...late, L: 20 }, L.lavkaRng(1)).report.newGoals.includes("oven"));
+  let st = P.factoryBuyOven({ ...P.factoryNewState(2e5), day: 1 });
+  assert.ok(P.factorySimulate({ ...st, L: 20 }, L.lavkaRng(1)).report.newGoals.includes("oven"));
+  st = { ...st, day: P.FACTORY.ovenDays, L: 20 };
+  const out = P.factorySimulate(st, L.lavkaRng(2));
+  assert.equal(out.report.salvage, P.FACTORY.ovenSalvage); assert.equal(out.next.ovenOwned, false);
 });

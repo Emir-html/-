@@ -5,7 +5,7 @@ import { COLORS } from "../../ui/theme.js";
 import { LAVKA_MONO, lavkaRub, lavkaFmt, LAVKA_MEDALS } from "./model.js";
 import {
   FACTORY, FACTORY_GOALS, FACTORY_CHAPTERS, LEVEL3_DIVIDEND,
-  factoryQ, factoryMPL, factoryMRP, factoryWage, factoryMarginalLaborCost, factoryOvenMath, factorySalePrice3,
+  factoryQ, factoryWage, factoryCost, factoryOvenMath, factorySalePrice3,
   factoryBuyOven, factorySimulate, factoryVerdict, levelFinish3,
   factoryExamOpen, factoryExamNew, factoryExamPlayDay, factoryExamResult, factoryExamFinish,
 } from "./factory.js";
@@ -104,7 +104,8 @@ function FactoryScreen({ st, update }) {
   const setF = (fn) => update((s) => ({ ...s, factory: fn(s.factory) }));
   const ch = FACTORY_CHAPTERS[f.chapter - 1];
   const dividends = (f.subsidiaries || []).filter((x) => x.daysLeft > 0).reduce((s, x) => s + x.dividend, 0);
-  const L = f.L, wage = factoryWage(f, L), mlc = factoryMarginalLaborCost(f, L), oven = factoryOvenMath();
+  const L = f.L, wage = factoryWage(f, L), oven = factoryOvenMath(f.day);
+  const dQn = factoryQ(L + 1) - factoryQ(L), dCn = factoryCost(f, L + 1) - factoryCost(f, L), dQl = factoryQ(L) - factoryQ(L - 1), dCl = factoryCost(f, L) - factoryCost(f, Math.max(0, L - 1));
   const Line = ({ l, v }) => <div className="flex justify-between text-sm py-0.5"><span>{l}</span><span style={{ fontFamily: LAVKA_MONO }}>{v}</span></div>;
   const open = () => { const out = factorySimulate(f, Math.random); setRep(out.report); update((s) => ({ ...s, factory: out.next })); window.scrollTo?.(0, 0); };
   const tabs = [["bakery", "Пекарня"], ["goals", "Цели"]];
@@ -160,7 +161,7 @@ function FactoryScreen({ st, update }) {
             <p className="font-semibold">Сколько нанять сегодня</p>
             <div className="mt-2"><LavkaStepper value={L} onChange={(v) => setF((x) => ({ ...x, L: v }))} min={0} max={40} suffix=" чел." /></div>
             <p className="text-xs mt-2" style={{ fontFamily: LAVKA_MONO }}>
-              {L}-й даёт {factoryMPL(L).toFixed(0)} пирожков → MRP ≈ {factoryMRP(L).toFixed(0)} ₽; зарплата всем {Math.round(wage)} ₽; {L}-й обходится в {Math.round(mlc)} ₽{f.chapter === 2 ? " (MRC)" : ""}.
+              {L}-й даёт ≈ {dQl.toFixed(1)} пирожка (≈ {Math.round(FACTORY.price * dQl)} ₽), расходы на труд растут на ≈ {Math.round(dCl)} ₽; следующий: ≈ {Math.round(FACTORY.price * dQn)} ₽ против ≈ {Math.round(dCn)} ₽. Зарплата всем {Math.round(wage)} ₽.
               Выпуск {Math.round(factoryQ(L))}, прибыль до шока ≈ {lavkaRub(FACTORY.price * factoryQ(L) - wage * L - (f.ovenOwned ? 0 : FACTORY.ovenRent))}.
             </p>
           </LavkaCard>
@@ -168,8 +169,8 @@ function FactoryScreen({ st, update }) {
             <p className="font-semibold">🔥 Печь: {f.ovenOwned ? "своя" : `в аренде (${lavkaFmt(FACTORY.ovenRent)} ₽/день)`}</p>
             {!f.ovenOwned && (
               <>
-                <p className="text-sm mt-1">Купить за {lavkaFmt(FACTORY.ovenPrice)} ₽ (через {FACTORY.ovenDays} дней её можно продать за {lavkaFmt(FACTORY.ovenSalvage)} ₽)?
-                  Сравни по NPV при r = 0,5%/день: PV аренды = {lavkaFmt(FACTORY.ovenRent)}·(1 − 1,005⁻⁶⁰)/0,005, PV покупки = цена − PV остаточной стоимости.</p>
+                <p className="text-sm mt-1">Купить за {lavkaFmt(FACTORY.ovenPrice)} ₽? В {FACTORY.ovenDays}-й день печь продаётся за {lavkaFmt(FACTORY.ovenSalvage)} ₽ — осталось {Math.max(0, oven.N)} дн.
+                  Сравни по NPV при r = 0,5%/день (игровая ставка, ≈ 500% годовых): PV аренды = {lavkaFmt(FACTORY.ovenRent)}·(1 − 1,005^−N)/0,005, PV покупки = цена − остаточная/1,005^N.</p>
                 <button onClick={() => setF(factoryBuyOven)} disabled={f.cash < FACTORY.ovenPrice} className="mt-2 text-sm px-4 py-2 rounded-full"
                   style={{ background: f.cash >= FACTORY.ovenPrice ? COLORS.onyx : COLORS.paperDeep, color: f.cash >= FACTORY.ovenPrice ? COLORS.onyxText : COLORS.inkSoft }}>Купить печь</button>
               </>
