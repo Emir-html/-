@@ -5,7 +5,7 @@ import { COLORS } from "../../ui/theme.js";
 import { LAVKA_MONO, lavkaRub, lavkaFmt, LAVKA_MEDALS } from "./model.js";
 import {
   FACTORY, FACTORY_GOALS, FACTORY_CHAPTERS,
-  factoryQ, factoryPrice, factoryFloor, factoryWage, factoryBoilerMath, factoryBuyBoiler, factoryAnswer, factorySimulate, factoryVerdict,
+  factoryQ, factoryPrice, factoryFloor, factoryWage, factoryBestL, factoryBoilerMath, factoryBuyBoiler, factoryAnswer, factorySimulate, factoryVerdict,
   factoryExamOpen, factoryExamNew, factoryExamPlayDay, factoryExamResult, factoryExamFinish, levelFinish3,
 } from "./factory.js";
 import { LavkaStepper, LavkaAwning, LavkaCard, LevelFinishCapital } from "./components.jsx";
@@ -22,15 +22,15 @@ function LevelFinish3Card({ st, update }) {
 /* Экзамен уровня 4: 3 сценария. */
 function FactoryExam({ factory, setFactory }) {
   const exam = factory.examActive;
-  const [L, setL] = useState(14);
+  const [L, setL] = useState(0);
   const [buy, setBuy] = useState(false);
   const [last, setLast] = useState(null);
   const i = exam.results.length, done = i >= exam.days.length;
   const head = (
     <LavkaCard tint={COLORS.blueSoft}>
       <p className="font-semibold">🎓 Экзамен уровня 4{done ? " — итог" : ` · день ${i + 1} из ${exam.days.length}`}</p>
-      <p className="text-sm mt-1">Три сценария: монопсония, МРОТ, котёл при новой ставке. Оценка дня ≈ 1 − 2 × относительная ошибка найма (прибыль по найму плоская, поэтому строго);
-        неверный котёл вычитает свою переплату в дневном эквиваленте PV. Касса не меняется.</p>
+      <p className="text-sm mt-1">Три сценария: монопсония, МРОТ, котёл при новой ставке. Оценка дня ≈ 1 − 2 × относительная ошибка найма (L целое — точный ответ достижим);
+        за котёл — множитель 1 − 2 × переплата в PV. Касса не меняется.</p>
     </LavkaCard>
   );
   if (done) {
@@ -50,7 +50,7 @@ function FactoryExam({ factory, setFactory }) {
               <div key={k} className="text-sm py-1.5" style={{ borderTop: `1px solid ${COLORS.line}` }}>
                 <div className="flex justify-between gap-2"><span>{k + 1}. {d.title}</span><span style={{ fontFamily: LAVKA_MONO }}>{res ? Math.round(res.days[k] * 100) + "%" : ""}</span></div>
                 <p className="text-xs" style={{ color: COLORS.inkSoft }}>ты: {r.ans.L} чел.{d.kind === "boiler" ? (r.ans.buy ? ", купить" : ", аренда") : ""}; эталон: {r.best.L}{d.kind === "boiler" ? (r.best.buy ? ", купить" : ", аренда") : ""}
-                  {d.kind === "minwage" && r.best.L < 14 ? " — МРОТ выше MRP при монопсоническом найме: занятость падает" : ""}</p>
+                  {d.kind === "minwage" && r.best.L < factoryBestL({ p: d.p, c: d.c, d: d.d }) ? " — МРОТ выше MRP при монопсоническом найме: занятость падает" : ""}</p>
               </div>
             );
           })}
@@ -131,7 +131,7 @@ function FactoryScreen({ st, update, children }) {
                 <Line l={`${f0(rep.Q)} наборов по ${rep.p} ₽ (без сырья)`} v={lavkaRub(rep.p * rep.Q)} />
                 <Line l={`Зарплата: ${rep.L} × ${f0(rep.wage)} ₽`} v={"−" + lavkaRub(rep.wage * rep.L)} />
                 <Line l="Аренда цеха" v={"−" + lavkaRub(rep.shop)} />
-                <Line l={factory.boiler && !factory.boiler.sold ? "Обслуживание котла" : "Аренда котла"} v={"−" + lavkaRub(rep.boilerCost)} />
+                <Line l={rep.boilerCost === FACTORY.boiler.maint ? "Обслуживание своего котла" : "Аренда котла"} v={"−" + lavkaRub(rep.boilerCost)} />
                 {rep.dividend > 0 && <Line l="Дивиденды дочек" v={"+" + lavkaRub(rep.dividend)} />}
                 {rep.interest !== 0 && <Line l="Проценты на остаток (2%)" v={(rep.interest > 0 ? "+" : "") + lavkaRub(rep.interest)} />}
                 {rep.reward > 0 && <Line l="Награды за цели" v={"+" + lavkaRub(rep.reward)} />}
@@ -177,7 +177,7 @@ function FactoryScreen({ st, update, children }) {
             <LavkaCard tint={COLORS.amberSoft}>
               <p className="font-semibold">✉️ Письмо против МРОТ</p>
               <p className="text-sm mt-1">Союз промышленников просит подписать письмо губернатору и оплатить юриста ({lavkaRub(FACTORY.letterCost)}): «МРОТ поднимут — наймут меньше. Это закон рынка».</p>
-              <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Посчитай для своего цеха: при 1 400 готовы работать 16 человек, а 16-й приносит ≈ 1 800 ₽. МРОТ введут в любом случае — письмо параметров не меняет.</p>
+              <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Посчитай для своего цеха: при 1 400 готовы работать 16 человек, а 16-й приносит 300 × 6,25 = 1 875 ₽. МРОТ введут в любом случае — письмо параметров не меняет.</p>
               <div className="flex gap-2 mt-3 flex-wrap">
                 <button onClick={() => setFactory((f) => factoryAnswer(f, "letter", false))} className="text-sm px-4 py-2 rounded-full" style={{ background: COLORS.onyx, color: COLORS.onyxText, fontWeight: 600 }}>Не подписывать</button>
                 <button onClick={() => setFactory((f) => factoryAnswer(f, "letter", true))} className="text-sm px-4 py-2 rounded-full" style={{ border: `1px solid ${COLORS.line}`, color: COLORS.ink }}>Подписать (−{lavkaFmt(FACTORY.letterCost)} ₽)</button>
@@ -201,7 +201,7 @@ function FactoryScreen({ st, update, children }) {
         <LavkaCard>
           <p className="font-semibold">🔥 Котёл</p>
           <p className="text-sm mt-1">Аренда {lavkaRub(FACTORY.boiler.rent)} в день или покупка {lavkaRub(FACTORY.boiler.price)}: обслуживание {lavkaRub(FACTORY.boiler.maint)} в день,
-            через {FACTORY.boiler.life} дней службы продаётся за {lavkaRub(FACTORY.boiler.salvage)}. Б/у котёл на рынке стоит столько, сколько сбережёт следующему владельцу, — поэтому сравнивают PV на весь срок службы.</p>
+            через {FACTORY.boiler.life} дней службы продаётся за {lavkaRub(FACTORY.boiler.salvage)}. Б/у котёл на рынке стоит столько, сколько сбережёт следующему владельцу, — поэтому сравнивают PV на весь срок службы: знак решения не зависит от дня, а если покупать выгодно — выгоднее сразу.</p>
           <div className="flex items-center gap-3 mt-3 text-sm"><span>Ставка, % в день</span>
             <LavkaStepper value={rate} onChange={setRate} step={0.5} min={0.5} max={5} suffix="%" /></div>
           <div className="mt-2 text-sm" style={{ fontFamily: LAVKA_MONO }}>

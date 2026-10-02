@@ -261,6 +261,7 @@ function fairSimulate(st, rng = Math.random) {
   let offer = st.offer, newRivals = rivals, entered = [], dissolved = null, flags = { ...(st.flags || {}) };
   if (nd === FAIR.cartelDay && !st.leader && !cartel) offer = { day: nd, ...cm };
   if (fined) flags.fined = true;
+  if (cheated) flags.semyonBroken = true; // Семён помнит обман: на уровне 5 лавку тебе не предложит
   /* Утренний прилавок действует до 14-го дня: с 15-го ряд перестроен, все открываются одновременно. */
   const leaderEnds = st.leader && nd > FAIR_UPGRADES[1].untilDay;
   if (leaderEnds) flags.stackelberg = true;

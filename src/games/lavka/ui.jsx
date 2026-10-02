@@ -17,6 +17,7 @@ import { LavkaStepper, LavkaAwning, LavkaCard } from "./components.jsx";
 import { FairScreen, LevelFinishCard } from "./fair-ui.jsx";
 import { ChainScreen } from "./chain-ui.jsx";
 import { FactoryScreen } from "./factory-ui.jsx";
+import { HoldingScreen, LevelFinish4Card } from "./holding-ui.jsx";
 
 function LavkaEventCard({ st }) {
   const [open, setOpen] = useState(false);
@@ -707,7 +708,8 @@ function LavkaScreen({ onBack, theme, onToggleTheme, studyBank }) {
       <main className="max-w-3xl mx-auto px-5 pb-24">
         {st.level === 2 && st.fair && <FairScreen st={st} update={update} />}
         {st.level === 3 && st.chain && <ChainScreen st={st} update={update} />}
-        {st.level === 4 && st.factory && <FactoryScreen st={st} update={update} />}
+        {st.level === 4 && st.factory && <FactoryScreen st={st} update={update}><LevelFinish4Card st={st} update={update} /></FactoryScreen>}
+        {st.level === 5 && st.holding && <HoldingScreen st={st} update={update} />}
 
         {(st.level || 1) === 1 && <LavkaAwning title="Лавка" sub={`Глава ${st.chapter || 1} «${LAVKA_CHAPTERS[(st.chapter || 1) - 1].title}» · день ${st.day}, ${LAVKA_WEEKDAYS[lavkaWeekday(st.day)]} · на счёте ${lavkaRub(st.cash)}${st.debt > 0 ? ` · долг ${lavkaRub(st.debt)}` : ""} · лояльность ${points.map((p) => Math.round(((st.rep || {})[p] || 1) * 100) + "%").join(" / ")}`} />}
 

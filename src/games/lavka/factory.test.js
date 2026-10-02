@@ -28,9 +28,10 @@ test("граница 1 400 (договор или МРОТ): MRC плоская 
   assert.equal(P.factoryBestL({ p: 300, floor: 1600 }), 17); assert.equal(P.factoryBestL({ p: 300, floor: 2300 }), 13); // дискретно: p·ΔQ(13) = 2 325 ≥ 2 300 > p·ΔQ(14) = 2 175
 });
 
-test("пик p = 380: оптимум 16 (27 400), 17-й требует 1 450 всем (27 335)", () => {
+test("пик p = 400: 17-й уже выше МРОТ (1 450 всем) — MRP(17) = 2 300 > MRC = 2 250; при 380 было бы 16", () => {
+  assert.equal(P.factoryBestL({ p: 400, floor: 1400 }), 17); assert.equal(P.FACTORY.pPeak, 400);
+  const s17 = P.factoryStep(17, { p: 400, floor: 1400 }); near(s17.mrp, 2300); near(s17.mrc, 2250);
   assert.equal(P.factoryBestL({ p: 380, floor: 1400 }), 16);
-  near(pi(16, { p: 380, floor: 1400 }), 27400); near(pi(17, { p: 380, floor: 1400 }), 27335);
 });
 
 test("котёл: PV на 48 дней службы — при 2% купить дешевле на 4 164, при 3% аренда дешевле на 56 620; б/у стоит PV сбережений", () => {
@@ -46,7 +47,7 @@ test("день цеха: прибыль = p·Q − w·L − цех − котё�
   const { next, report } = P.factorySimulate(st);
   near(report.profit, 14900); assert.equal(next.day, 2);
   assert.equal(P.factoryFloor({ ...st, day: 10, contract: true }), 1400); assert.equal(P.factoryFloor({ ...st, day: 12 }), 0);
-  assert.equal(P.factoryFloor({ ...st, day: 16 }), 1400); assert.equal(P.factoryPrice(19), 380);
+  assert.equal(P.factoryFloor({ ...st, day: 16 }), 1400); assert.equal(P.factoryPrice(19), 400);
   const owned = P.factoryBuyBoiler({ ...st, day: 8 });
   assert.equal(owned.cash, 1e5 - 280000); near(P.factorySimulate(owned).report.boilerCost, 500);
 });
@@ -62,7 +63,8 @@ test("цели: монопсония до границы, МРОТ (16), пик 
   assert.ok(P.factorySimulate({ ...P.factoryNewState(), L: 14 }).report.newGoals.includes("monopsony"));
   assert.ok(!P.factorySimulate({ ...P.factoryNewState(), L: 15 }).report.newGoals.includes("monopsony"));
   assert.ok(P.factorySimulate({ ...P.factoryNewState(), day: 16, chapter: 3, L: 16 }).report.newGoals.includes("minwage"));
-  assert.ok(P.factorySimulate({ ...P.factoryNewState(), day: 19, chapter: 3, L: 16 }).report.newGoals.includes("peak"));
+  assert.ok(P.factorySimulate({ ...P.factoryNewState(), day: 19, chapter: 3, L: 17 }).report.newGoals.includes("peak"));
+  assert.ok(!P.factorySimulate({ ...P.factoryNewState(), day: 19, chapter: 3, L: 16 }).report.newGoals.includes("peak"));
   assert.ok(P.factorySimulate(P.factoryBuyBoiler({ ...P.factoryNewState(), day: 8 })).report.newGoals.includes("boiler"));
 });
 
@@ -99,17 +101,29 @@ test("экзамен: 3 сценария, детерминирован; этал
   assert.ok(below > 0, "иногда МРОТ выше MRP при монопсоническом найме"); assert.ok(buy > 0 && rent > 0);
 });
 
-test("экзамен: «всегда 14, аренда» и «всегда 18 (MRP = w), аренда» — серебро не чаще 5%", () => {
+test("экзамен: МРОТ всегда связывает; «всегда 14», «MRP = w», «игнорирует МРОТ», серебро и выше ≤ 5%; котёл угадывается не чаще половины", () => {
   const f = { ...P.factoryNewState(), day: 22, chapter: 3 };
-  for (const L of [14, 18]) {
+  const run = (pick, seed) => { let ex = P.factoryExamNew(f, seed); for (const d of ex.days) ex = P.factoryExamPlayDay(f, ex, pick(d)).exam; return P.factoryExamResult(ex); };
+  for (let s = 0; s < 60; s++) for (const d of P.factoryExamNew(f, 700 + s).days.slice(1)) {
+    assert.notEqual(P.factoryBestL(d), P.factoryBestL({ p: d.p, c: d.c, d: d.d }), "МРОТ меняет найм");
+    assert.ok(P.factoryBestL({ p: d.p, c: d.c, d: d.d }) >= 8);
+  }
+  const mrpW = (d) => { let L = 0; while (d.p * (P.factoryQ(L + 1) - P.factoryQ(L)) >= Math.max(d.floor || 0, d.c + d.d * (L + 1))) L++; return L; };
+  const strategies = {
+    "всегда 14": () => ({ L: 14, buy: false }),
+    "MRP = w": (d) => ({ L: mrpW(d), buy: P.factoryExamBest(d).buy }),
+    "игнорирует МРОТ": (d) => ({ L: P.factoryBestL({ p: d.p, c: d.c, d: d.d }), buy: P.factoryExamBest(d).buy }),
+  };
+  /* Котёл — бинарный выбор с ставками поровну за покупку и аренду: угадать можно в половине попыток, но не чаще. */
+  for (const buy of [false, true]) {
+    let gold = 0;
+    for (let s = 0; s < 100; s++) { const r = run((d) => ({ ...P.factoryExamBest(d), buy }), 300 + s); if (r.medal && r.medal.id === "gold") gold++; }
+    assert.ok(gold <= 60, `«котёл всегда ${buy ? "покупка" : "аренда"}»: золото в ${gold} из 100`);
+  }
+  for (const [name, fn] of Object.entries(strategies)) {
     let silver = 0;
-    for (let s = 0; s < 60; s++) {
-      let ex = P.factoryExamNew(f, 300 + s);
-      for (const d of ex.days) ex = P.factoryExamPlayDay(f, ex, { L, buy: false }).exam;
-      const r = P.factoryExamResult(ex);
-      if (r.medal && r.medal.id !== "bronze") silver++;
-    }
-    assert.ok(silver <= 3, `«всегда ${L}»: серебро в ${silver} из 60`);
+    for (let s = 0; s < 100; s++) { const r = run(fn, 300 + s); if (r.medal && r.medal.id !== "bronze") silver++; }
+    assert.ok(silver <= 5, `«${name}»: серебро и выше в ${silver} из 100`);
   }
 });
 

@@ -1,102 +1,147 @@
-/* Тесты уровня 5 «Холдинг»: node --test holding.test.js
-   NPV/PI при ограниченном капитале, аннуитет и дифференцированный платёж, УСН, диверсификация, франшиза, валютный форвард. */
+/* Тесты уровня 5 «Холдинг» (сценарий «Путь компании»): node --test holding.test.js
+   NPV/PI и неделимость, кредит (PV схем при ставке альтернативы), УСН, страховка с экстренным кредитом,
+   красный флаг (ценность информации), дамба, паводок, экзамен, финал с двумя покупателями. */
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as H from "./holding.js";
 import * as P from "./factory.js";
-import * as L from "./model.js";
+import * as K from "./capital.js";
 
 const near = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) <= eps, `${a} ≉ ${b}`);
-const r = H.HOLDING.rate;
+const PR = H.HOLDING.projects;
+const withSubs = (h) => ({ ...h, subsidiaries: [{ name: "Сеть", level: 3, dividend: 1500, daysLeft: 40 }, { name: "Цех", level: 4, dividend: 1800, daysLeft: 24 }] });
 
-test("NPV и PI проекта: PV = c·(1 − (1 + r)^−T)/r, NPV = PV − I, PI = PV/I", () => {
-  const p = { cost: 50000, cf: 1500, days: 50 };
-  const pv = 1500 * (1 - (1 + r) ** -50) / r;
-  near(H.holdingPV(p), pv); near(H.holdingNPV(p), pv - 50000); near(H.holdingPI(p), pv / 50000);
+test("проекты: NPV при 2% на 30 дней, PI, окупаемость; P6 окупается за 26,7 дня, но NPV < 0", () => {
+  near(H.holdingNPV(PR.find((p) => p.id === "P1")), 68757, 1); near(H.holdingPI(PR.find((p) => p.id === "P1")), 1.344, 0.001);
+  const p6 = PR.find((p) => p.id === "P6");
+  assert.ok(H.holdingPayback(p6) < 30 && H.holdingNPV(p6) < 0);
+  near(H.holdingNPV(p6), -12811, 1);
 });
 
-test("бюджет капитала: лучший набор — максимум NPV перебором; жадный выбор по PI может проиграть", () => {
-  const projects = [
-    { id: "A", cost: 60000, cf: 1600, days: 60 }, { id: "B", cost: 50000, cf: 1250, days: 60 },
-    { id: "C", cost: 50000, cf: 1250, days: 60 }, { id: "D", cost: 30000, cf: 300, days: 60 },
-  ];
-  const best = H.holdingBestSet(projects, 100000);
-  assert.deepEqual(best.ids.sort(), ["B", "C"]);
-  const greedy = H.holdingGreedyPI(projects, 100000);
-  assert.ok(greedy.npv < best.npv, "по PI берём A, и на B + C бюджета уже не хватает");
-  assert.ok(!best.ids.includes("D") || H.holdingNPV(projects[3]) > 0, "проект с NPV < 0 не берём");
+test("бюджет 500 000: лучший набор P1 + P3 + P4 (134 704); жадный по PI — 123 920; без Семёна — P1 + P2 (127 101)", () => {
+  const best = H.holdingBestSet(PR, 500000);
+  assert.deepEqual(best.ids.sort(), ["P1", "P3", "P4"]); near(best.npv, 134704, 1);
+  near(H.holdingGreedyPI(PR, 500000).npv, 123920, 1);
+  near(H.holdingBestSet(PR.filter((p) => p.id !== "P3"), 500000).npv, 127101, 1);
 });
 
-test("кредит: аннуитет и дифференцированный — PV платежей по ставке кредита равен сумме; переплата у дифференцированного меньше", () => {
-  const loan = { amount: 100000, rate: 0.01, n: 20 };
-  const ann = H.holdingSchedule(loan, "annuity"), dif = H.holdingSchedule(loan, "diff");
-  const pv = (pays) => pays.reduce((s, x, t) => s + x / (1 + loan.rate) ** (t + 1), 0);
-  near(pv(ann), 100000, 1e-6); near(pv(dif), 100000, 1e-6);
-  const a = loan.amount * loan.rate / (1 - (1 + loan.rate) ** -loan.n);
-  for (const x of ann) near(x, a, 1e-9);
-  assert.ok(dif.reduce((s, x) => s + x, 0) < ann.reduce((s, x) => s + x, 0));
-  assert.equal(H.holdingLoanBest({ loanRate: 0.01, depositRate: 0.005 }), "diff", "ставка кредита выше депозита — гаси быстрее");
-  assert.equal(H.holdingLoanBest({ loanRate: 0.003, depositRate: 0.005 }), "annuity");
+test("кредит: аннуитет 33 398, дифф. 36 000 → 30 600; при ставке альтернативы = ставке кредита PV обеих = 300 000", () => {
+  const L = { amount: 300000, rate: 0.02, n: 10 }, a = H.holdingSchedule(L, "annuity"), d = H.holdingSchedule(L, "diff");
+  near(a[0], 33398, 1); near(d[0], 36000); near(d[9], 30600);
+  near(H.holdingSchedulePV(a), 300000, 1e-6); near(H.holdingSchedulePV(d), 300000, 1e-6);
+  /* Кредит дороже альтернативы — дифференцированный выгоднее (меньше PV), дешевле — аннуитет. */
+  const L3 = { ...L, rate: 0.025 }, L1 = { ...L, rate: 0.015 };
+  assert.ok(H.holdingSchedulePV(H.holdingSchedule(L3, "diff")) < H.holdingSchedulePV(H.holdingSchedule(L3, "annuity")));
+  assert.ok(H.holdingSchedulePV(H.holdingSchedule(L1, "annuity")) < H.holdingSchedulePV(H.holdingSchedule(L1, "diff")));
 });
 
-test("УСН: 6% с доходов против 15% с (доходы − расходы), но не меньше 1% доходов", () => {
-  near(H.holdingTax({ revenue: 100000, costs: 70000 }, "usn6"), 6000);
-  near(H.holdingTax({ revenue: 100000, costs: 70000 }, "usn15"), 4500);
-  near(H.holdingTax({ revenue: 100000, costs: 99000 }, "usn15"), 1000, 1e-9);
-  assert.equal(H.holdingTaxBest({ revenue: 100000, costs: 50000 }), "usn6");
-  assert.equal(H.holdingTaxBest({ revenue: 100000, costs: 70000 }), "usn15");
+test("УСН: холдинг (E/R = 0,71) — 15% (78 750 против 108 000); граница E/R = 60%; минимум 1%", () => {
+  near(H.holdingTax(H.HOLDING.tax, "usn6"), 108000); near(H.holdingTax(H.HOLDING.tax, "usn15"), 78750);
+  assert.equal(H.holdingTaxBest(H.HOLDING.tax), "usn15");
+  assert.equal(H.holdingTaxBest({ R: 100, E: 55 }), "usn6"); assert.equal(H.holdingTaxBest({ R: 100, E: 65 }), "usn15");
+  near(H.holdingTax({ R: 100000, E: 99500 }, "usn15"), 1000);
 });
 
-test("диверсификация: σ портфеля 50/50 = √(σ₁²/4 + σ₂²/4 + ρσ₁σ₂/2); меньше ρ — меньше риск", () => {
-  near(H.holdingPortfolioSigma(0.5, 20, 20, 1), 20); near(H.holdingPortfolioSigma(0.5, 20, 20, 0), Math.sqrt(200));
-  near(H.holdingPortfolioSigma(0.5, 20, 20, -1), 0);
-  assert.ok(H.holdingPortfolioSigma(0.5, 20, 30, 0.2) < H.holdingPortfolioSigma(0.5, 20, 30, 0.8));
+test("страховка: касса 250 000 — франшиза (147 000 против 165 000 без полиса); касса 500 000 — не страховать (120 000)", () => {
+  const pol = H.holdingPolicies({ cafes: 150000, factory: 250000 });
+  near(pol.full, 150000); near(pol.deductible, 135000);
+  near(H.holdingInsuranceCost("none", pol, 250000), 165000); near(H.holdingInsuranceCost("deductible", pol, 250000), 147000);
+  assert.equal(H.holdingInsuranceBest(pol, 250000), "deductible"); assert.equal(H.holdingInsuranceBest(pol, 500000), "none");
 });
 
-test("франшиза: фикс против роялти по ожиданию; валютный форвард: фиксирует курс, сравнение с ожидаемым спотом", () => {
-  assert.equal(H.holdingFranchiseBest({ fixed: 3000, share: 0.05, expRevenue: 50000 }), "fixed");
-  assert.equal(H.holdingFranchiseBest({ fixed: 2000, share: 0.05, expRevenue: 50000 }), "royalty");
-  assert.equal(H.holdingFxBest({ forward: 92, expSpot: 95, payUSD: 1000 }), "hedge", "платим в долларах — форвард дешевле ожидаемого спота");
-  assert.equal(H.holdingFxBest({ forward: 97, expSpot: 95, payUSD: 1000 }), "spot");
+test("мир: флаг с вероятностью 0,6, паводок только после флага (0,5) — итого ≈ 0,3", () => {
+  let flags = 0, floods = 0, floodNoFlag = 0;
+  for (let s = 1; s <= 2000; s++) { const w = H.holdingNewState(0, s).world; if (w.flag) flags++; if (w.flood) floods++; if (w.flood && !w.flag) floodNoFlag++; }
+  assert.equal(floodNoFlag, 0); near(flags / 2000, 0.6, 0.04); near(floods / 2000, 0.3, 0.04);
 });
 
-test("день холдинга: задача дня → решение → последствия; дивиденды, проекты, проценты", () => {
-  let st = H.holdingNewState(200000);
-  const task = H.holdingTask(st);
-  assert.equal(task.kind, "budget");
-  const best = H.holdingTaskBest(task);
-  const out = H.holdingAnswer(st, task, best);
-  assert.equal(out.score, 1);
-  st = out.next;
-  assert.ok(st.projects.length > 0 && st.cash < 200000, "купленные проекты оплачены");
-  const day = H.holdingNextDay(st, L.lavkaRng(1));
-  assert.equal(day.next.day, 2);
-  near(day.report.projectCF, st.projects.reduce((s, p) => s + p.cf, 0));
+test("портфель: утвердить можно до 7-го дня в бюджете; цель — лучший набор при полной доске", () => {
+  let h = withSubs(H.holdingNewState(600000, 3)); h.day = 5;
+  const ok = H.holdingApprove(h, ["P1", "P3", "P4"]);
+  assert.equal(ok.cash, 600000 - 470000 + 10000); assert.ok(ok.goals.portfolio); assert.equal(ok.projects.length, 3);
+  assert.equal(H.holdingApprove(h, ["P1", "P2", "P4"]).approved, null, "сверх бюджета не утвердить");
+  assert.equal(H.holdingApprove({ ...h, day: 8 }, ["P1"]).approved, null);
+  const early = H.holdingApprove({ ...h, day: 3 }, ["P1", "P5"]);
+  assert.ok(!early.goals.portfolio, "на 3-й день доска неполная");
+  const noSemyon = { ...h, semyonTrust: false };
+  assert.ok(H.holdingApprove(noSemyon, ["P1", "P2"]).goals.portfolio);
 });
 
-test("главы по дням: инвестиции → кредит и налоги (с 8-го) → риск (с 15-го); финал — экзамен с 22-го", () => {
-  const kinds = (ch) => new Set(Array.from({ length: 12 }, (_, i) => H.holdingTask({ ...H.holdingNewState(1e5), chapter: ch, day: 1 + i, seed: 3 }).kind));
-  assert.deepEqual([...kinds(1)], ["budget"]);
-  assert.deepEqual([...kinds(2)].sort(), ["loan", "tax"]);
-  assert.deepEqual([...kinds(3)].sort(), ["diversify", "franchise", "fx"]);
-  assert.equal(H.holdingExamOpen({ chapter: 3, day: 22 }), true);
+test("день: дивиденды + проекты − кредит + проценты; налог на 21-й; курс на 19-й", () => {
+  let h = withSubs(H.holdingNewState(600000, 3)); h.day = 5;
+  h = H.holdingApprove(h, ["P1", "P3", "P4"]);
+  const { next, report } = H.holdingNextDay(h);
+  near(report.dividend, 3300); near(report.projectCF, 27000); near(report.interest, h.cash * 0.02);
+  assert.equal(next.cash, Math.round(h.cash + 3300 + 27000 + h.cash * 0.02));
+  h = H.holdingTakeLoan({ ...next, day: 8 }, "diff");
+  assert.equal(h.cash, next.cash + 300000);
+  near(H.holdingNextDay(h).report.loanPay, 36000);
+  const t = H.holdingNextDay({ ...H.holdingChooseTax({ ...h, day: 6 }, "usn15"), day: 21 }).report;
+  near(t.tax, 78750);
+  const fx = H.holdingNextDay({ ...h, day: 19, hedged: true }).report; near(fx.fx, 96000);
 });
 
-test("экзамен уровня 5: 4 задачи разных глав, лучшие ответы = 100%, «всегда первый вариант» — без серебра", () => {
-  const st = { ...H.holdingNewState(1e5), chapter: 3, day: 22 };
-  const run = (pick, seed) => { let ex = H.holdingExamNew(st, seed); for (let i = 0; i < ex.tasks.length; i++) ex = H.holdingExamPlay(ex, pick(ex.tasks[i])).exam; return H.holdingExamResult(ex); };
-  near(run((t) => H.holdingTaskBest(t), 7).eff, 1);
-  let silver = 0;
-  for (let s = 0; s < 30; s++) { const res = run((t) => H.holdingTaskFirst(t), 50 + s); if (res.medal && res.medal.id !== "bronze") silver++; }
-  assert.ok(silver <= 3, `серебро в ${silver} из 30`);
+test("паводок: перенос −40%, дамба ещё −60% для кофеен, страховка покрывает сверх франшизы; нехватка — экстренный кредит", () => {
+  let h = withSubs(H.holdingNewState(50000, 1));
+  h.world = { flag: true, flood: true, spot: 110 };
+  h = H.holdingInsure({ ...h, day: 10 }, "deductible");
+  h = H.holdingMove({ ...h, day: 15 }); h = H.holdingDam({ ...h, day: 16 }, true);
+  const loss = H.holdingFloodLoss(h);
+  near(loss.cafes, 150000 * 0.6 * 0.4); near(loss.factory, 250000 * 0.6);
+  near(loss.payout, (36000 - 20000) + (150000 - 20000)); near(loss.net, 40000);
+  const poor = { ...withSubs(H.holdingNewState(10000, 1)), day: 18, world: { flag: true, flood: true, spot: 80 } };
+  const out = H.holdingNextDay(poor);
+  assert.ok(out.report.emergency > 0); assert.equal(out.next.cash, 0); near(out.next.emergencyDebt, out.report.emergency * 2);
+  assert.equal(H.holdingMove({ ...withSubs(H.holdingNewState(1e5, 1)), day: 15, world: { flag: false, flood: false, spot: 80 } }).moved, false, "без флага переносить незачем — и нельзя");
 });
 
-test("переход с уровня 4: только с медалью экзамена пекарни; дочки копятся; итог — стоимость холдинга", () => {
-  const st = { level: 4, factory: { ...P.factoryNewState(1e5), subsidiaries: [{ name: "Сеть", dividend: 3600, daysLeft: 5 }] } };
-  assert.equal(H.levelFinish4(st, "sell"), null);
-  st.factory.examBest = { eff: 0.97, medal: "gold", attempts: 1 };
-  const kept = H.levelFinish4(st, "keep");
-  assert.equal(kept.level, 5); assert.equal(kept.holding.subsidiaries.length, 2);
-  const v = H.holdingValue(kept.holding);
-  assert.ok(v > kept.holding.cash, "стоимость = касса + PV будущих дивидендов и проектов");
+test("цель «Кому нужна страховка»: по прогнозу кассы на день паводка", () => {
+  const rich = { ...withSubs(H.holdingNewState(900000, 2)), day: 10 };
+  const r1 = H.holdingInsure(rich, "none");
+  assert.equal(r1.insurance.best, "none"); assert.ok(r1.goals.insurance);
+  /* Касса покрывает премию, но не убыток (≈ 250 000 к паводку) — страховка с франшизой выгоднее. */
+  const mid = { ...withSubs(H.holdingNewState(220000, 2)), day: 10 };
+  const r2 = H.holdingInsure(mid, "none");
+  assert.equal(r2.insurance.best, "deductible"); assert.ok(!r2.goals.insurance);
+  /* Касса не покрывает даже премию — полис пришлось бы оплачивать экстренным кредитом: не страховать дешевле. */
+  assert.equal(H.holdingInsure({ ...withSubs(H.holdingNewState(20000, 2)), day: 10 }, "none").insurance.best, "none");
+});
+
+/* ===== Экзамен ===== */
+test("экзамен: 3 задачи, эталон = 100%; «ничего не делать» и «всегда первый вариант» — без серебра", () => {
+  const h = { ...H.holdingNewState(0, 1), chapter: 3, day: 22 };
+  assert.equal(H.holdingExamOpen(h), true);
+  const run = (pick, seed) => { let ex = H.holdingExamNew(h, seed); for (const d of ex.days) ex = H.holdingExamPlay(ex, pick(d)).exam; return H.holdingExamResult(ex); };
+  near(run((d) => H.holdingExamBest(d), 7).eff, 1);
+  let silver = 0, silver2 = 0;
+  for (let s = 0; s < 60; s++) {
+    const r = run((d) => (d.kind === "portfolio" ? { ids: [] } : d.kind === "finance" ? { scheme: "diff", regime: "usn6" } : { choice: "none" }), 50 + s);
+    if (r.medal && r.medal.id !== "bronze") silver++;
+    const r2 = run((d) => (d.kind === "portfolio" ? { ids: [d.projects[0].id] } : d.kind === "finance" ? { scheme: "annuity", regime: "usn15" } : { choice: "full" }), 50 + s);
+    if (r2.medal && r2.medal.id !== "bronze") silver2++;
+  }
+  assert.equal(silver, 0); assert.ok(silver2 <= 3, `серебро в ${silver2} из 60`);
+});
+
+test("финал: Железнова — 95% истинной стоимости; Плотников — по медали; сильному выгоднее раскрыться", () => {
+  const strong = { ...withSubs(H.holdingNewState(1e5, 1)), projects: [{ id: "P1", cf: 12000, daysLeft: 20 }, { id: "P2", cf: 16000, daysLeft: 20 }], examBest: { medal: "silver", eff: 0.9 } };
+  const o = H.holdingOffers(strong, "silver");
+  near(o.zheleznova, 0.95 * H.holdingTrueValue(strong)); near(o.plotnikov, 0.9 * H.HOLDING.cityD * K.annuity(30));
+  assert.ok(o.zheleznova > o.plotnikov);
+  const sold = H.holdingSell(strong, "zheleznova");
+  assert.equal(sold.sold.price, Math.round(o.zheleznova)); assert.equal(sold.finalCapital, Math.round(1e5 + o.zheleznova));
+  const weak = { ...strong, subsidiaries: [], projects: [{ id: "P5", cf: 3500, daysLeft: 20 }] };
+  const ow = H.holdingOffers(weak, "silver"); assert.ok(ow.plotnikov > ow.zheleznova, "слабому выгоднее промолчать");
+});
+
+test("переход с уровня 4 через capital.js: фонд развития 500 000, дочки копятся, Семён помнит обман", () => {
+  const f = { ...P.factoryNewState(1e5), subsidiaries: [{ name: "Сеть", level: 3, dividend: 1400, daysLeft: 30 }] };
+  assert.equal(H.levelFinish4({ level: 4, factory: f }, "sell"), null);
+  f.examBest = { eff: 0.92, medal: "silver", piBot: 6000, attempts: 1 };
+  const kept = H.levelFinish4({ level: 4, factory: f, fair: { flags: { semyonBroken: true } } }, "keep");
+  assert.equal(kept.level, 5); assert.equal(kept.holding.subsidiaries.length, 2); assert.equal(kept.holding.subsidiaries[1].daysLeft, 24);
+  assert.equal(kept.holding.cash, H.HOLDING.devFund); assert.equal(kept.holding.semyonTrust, false);
+  assert.ok(!H.holdingBoard({ ...kept.holding, day: 5 }).some((p) => p.id === "P3"));
+  const sold = H.levelFinish4({ level: 4, factory: f }, "sell");
+  assert.equal(sold.holding.cash, H.HOLDING.devFund + Math.round(K.capitalSalePrice(4, "silver")));
 });
