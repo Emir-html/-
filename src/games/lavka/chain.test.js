@@ -137,3 +137,34 @@ test("оценка спроса — только по наблюдениям т�
   const r = C.chainSimulate({ ...st, q: [30, 30] }, L.lavkaRng(1)).report;
   near(r.fit.A, 200, 1e-6); near(r.fit.B, 1, 1e-6);
 });
+
+/* ===== Экзамен уровня 3 ===== */
+
+const examChain = () => { const c = C.chainNewState(1e5); c.day = 22; c.chapter = 3; return c; };
+
+test("экзамен уровня 3: открыт в главе 3 с 22-го дня; 4 сценария со случайными параметрами", () => {
+  const c = examChain();
+  assert.equal(C.chainExamOpen(c), true); assert.equal(C.chainExamOpen({ ...c, day: 21 }), false);
+  const e = C.chainExamNew(c, 3);
+  assert.deepEqual(e.days.map((d) => d.kind), ["two", "loss", "bulk", "cap"]);
+  assert.deepEqual(e.days, C.chainExamNew(c, 3).days);
+  const As = new Set(); for (let s = 0; s < 30; s++) As.add(C.chainExamNew(c, s).days[0].A);
+  assert.ok(As.size > 5, "спрос меняется от попытки к попытке");
+});
+
+test("экзамен уровня 3: оценка по решениям — оптимум 100%, «пополам» и «не закрывать» теряют, без расчётов нет серебра", () => {
+  const c = examChain();
+  const run = (pick, seed = 5) => { let ex = C.chainExamNew(c, seed); for (let i = 0; i < 4; i++) ex = C.chainExamPlayDay(c, ex, pick(ex.days[i])).exam; return C.chainExamResult(ex); };
+  const best = run((d) => C.chainExamBest(d));
+  near(best.eff, 1, 1e-9); assert.equal(best.medal.id, "gold");
+  const noClose = run((d) => ({ ...C.chainExamBest(d), close: false }));
+  assert.ok(noClose.days[1] <= 0.5 + 1e-9, "в убыточной точке неверное решение о закрытии — половина дня");
+  let silver = 0;
+  for (let s = 0; s < 40; s++) {
+    const r = run(() => ({ q: [40, 50], close: false }), 100 + s);
+    if (r.medal && r.medal.id !== "bronze") silver++;
+  }
+  assert.ok(silver === 0, `«всегда 40 + 50» — серебро в ${silver} из 40`);
+  const after = C.chainExamFinish(c, { ...C.chainExamNew(c, 5), results: [] });
+  assert.equal(after.cash, c.cash);
+});

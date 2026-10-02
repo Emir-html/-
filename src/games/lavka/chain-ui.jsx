@@ -7,6 +7,7 @@ import { fairFit } from "./fair.js";
 import {
   CHAIN, CHAIN_GOALS, CHAIN_CHAPTERS, LEVEL2_DIVIDEND,
   chainMC, chainVC, chainA, chainSalePrice2, chainSetOpen, chainSimulate, chainVerdict, levelFinish2,
+  chainExamOpen, chainExamNew, chainExamPlayDay, chainExamResult, chainExamFinish,
 } from "./chain.js";
 import { LavkaStepper, LavkaAwning, LavkaCard } from "./components.jsx";
 
@@ -40,6 +41,71 @@ function LevelFinish2Card({ st, update }) {
   );
 }
 
+/* Экзамен уровня 3: 4 дня на копии сети, оценка — по решениям (выпуск кухонь, закрытие). */
+function ChainExam({ chain, setChain }) {
+  const exam = chain.examActive;
+  const [q, setQ] = useState([40, 50]);
+  const [close, setClose] = useState(null);
+  const i = exam.results.length, done = i >= exam.days.length;
+  const head = (
+    <LavkaCard tint={COLORS.blueSoft}>
+      <p className="font-semibold">🎓 Экзамен уровня 3{done ? " — итог" : ` · день ${i + 1} из ${exam.days.length}`}</p>
+      <p className="text-sm mt-1">Четыре задачи: две кухни, убыточная точка, опт, мощность. Оценка — по решениям: насколько твои выпуски кухонь близки
+        к оптимальным, и верно ли решение о закрытии. Касса не меняется, параметры в каждой попытке новые.</p>
+    </LavkaCard>
+  );
+  if (done) {
+    const res = chainExamResult(exam), medal = res && res.medal;
+    return (
+      <div className="ms-rise">
+        {head}
+        <LavkaCard tint={medal ? COLORS.sageSoft : COLORS.rustSoft}>
+          <p className="text-3xl" style={{ fontFamily: LAVKA_MONO, fontWeight: 700 }}>{Math.round(res.eff * 100)}%</p>
+          <p className="text-base mt-1 font-semibold">{medal ? `${medal.emoji} ${medal.title}` : "Без медали"}</p>
+          <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Худший день: {Math.round(res.minDay * 100)}%. Медали: 🥉 ≥ 70% и каждый день ≥ 50%, 🥈 ≥ 85% и ≥ 70%, 🥇 ≥ 95% и ≥ 85%.</p>
+          {exam.days.map((d, k) => {
+            const r = exam.results[k];
+            return (
+              <div key={k} className="text-sm py-1.5" style={{ borderTop: `1px solid ${COLORS.line}` }}>
+                <div className="flex justify-between gap-2"><span>{k + 1}. {d.title}</span><span style={{ fontFamily: LAVKA_MONO }}>{Math.round(res.days[k] * 100)}%</span></div>
+                <p className="text-xs" style={{ color: COLORS.inkSoft }}>ты: {r.q.join(" + ")}, оптимум: {r.best.join(" + ")}{r.closeRight != null ? ` · закрытие: ${r.closeRight ? "верно" : "неверно"}` : ""}</p>
+              </div>
+            );
+          })}
+        </LavkaCard>
+        <button onClick={() => setChain((c) => chainExamFinish(c, c.examActive))} className="w-full py-3.5 rounded-full text-base" style={{ background: COLORS.onyx, color: COLORS.onyxText, fontWeight: 700 }}>Вернуться в сеть</button>
+      </div>
+    );
+  }
+  const d = exam.days[i];
+  return (
+    <div>
+      {head}
+      <LavkaCard tint={COLORS.amberSoft}><p className="font-semibold">День {i + 1}: {d.title}</p><p className="text-sm mt-1">{d.text}</p></LavkaCard>
+      {CHAIN.kitchens.map((k, j) => (
+        <LavkaCard key={k.name}>
+          <p className="font-semibold">☕ {k.name}</p>
+          <p className="text-xs" style={{ color: COLORS.inkSoft, fontFamily: LAVKA_MONO }}>MC = {CHAIN.w} (зёрна) + {k.base} + {2 * k.b}·q · мощность {d.caps[j]} · аренда {lavkaFmt(k.F)} ₽</p>
+          <div className="mt-2"><LavkaStepper value={Math.min(q[j], d.caps[j])} onChange={(v) => setQ((x) => { const n = [...x]; n[j] = Math.min(d.caps[j], v); return n; })} min={0} max={d.caps[j]} suffix=" ч." /></div>
+        </LavkaCard>
+      ))}
+      {d.kind === "loss" && (
+        <LavkaCard>
+          <p className="font-semibold">Закрыть Заводскую в длинном периоде?</p>
+          <div className="flex gap-2 mt-2">
+            {[[true, "Да, закрыть"], [false, "Нет, оставить"]].map(([v, l]) => (
+              <button key={l} onClick={() => setClose(v)} className="text-sm px-4 py-2 rounded-full" style={{ background: close === v ? COLORS.onyx : COLORS.surfaceSolid, color: close === v ? COLORS.onyxText : COLORS.ink, border: `1px solid ${COLORS.line}` }}>{l}</button>
+            ))}
+          </div>
+        </LavkaCard>
+      )}
+      <button disabled={d.kind === "loss" && close == null} onClick={() => { const out = chainExamPlayDay(chain, exam, { q: q.map((x, j) => Math.min(x, d.caps[j])), close }); setChain((c) => ({ ...c, examActive: out.exam })); setClose(null); window.scrollTo?.(0, 0); }}
+        className="w-full py-3.5 rounded-full text-base" style={{ background: COLORS.onyx, color: COLORS.onyxText, fontWeight: 700, opacity: d.kind === "loss" && close == null ? 0.5 : 1 }}>Ответить · день {i + 1} из {exam.days.length}</button>
+      <button onClick={() => setChain((c) => ({ ...c, examActive: null }))} className="w-full py-2.5 rounded-full text-sm mt-2" style={{ border: `1px solid ${COLORS.line}`, color: COLORS.inkSoft }}>Прервать экзамен (не засчитается)</button>
+    </div>
+  );
+}
+
 function ChainScreen({ st, update }) {
   const chain = st.chain;
   const [tab, setTab] = useState("chain");
@@ -57,6 +123,12 @@ function ChainScreen({ st, update }) {
   const Line = ({ l, v }) => <div className="flex justify-between text-sm py-0.5"><span>{l}</span><span style={{ fontFamily: LAVKA_MONO }}>{v}</span></div>;
   const open = () => { const out = chainSimulate(chain, Math.random); setRep(out.report); update((s) => ({ ...s, chain: out.next })); window.scrollTo?.(0, 0); };
   const tabs = [["chain", "Сеть"], ["goals", "Цели"]];
+  if (chain.examActive) return (
+    <div>
+      <LavkaAwning title="Сеть кофеен" sub={`Уровень 3 · экзамен · на счёте ${lavkaRub(chain.cash)}`} />
+      <ChainExam chain={chain} setChain={setChain} />
+    </div>
+  );
 
   return (
     <div>
@@ -83,6 +155,18 @@ function ChainScreen({ st, update }) {
               {rep.newChapter && <p className="text-sm mt-2 font-semibold">📖 Открыта глава {rep.newChapter}: «{CHAIN_CHAPTERS[rep.newChapter - 1].title}»</p>}
               {rep.newGoals.map((id) => { const g = CHAIN_GOALS.find((x) => x.id === id); return <p key={id} className="text-sm mt-1 font-semibold">{g.emoji} Цель: {g.title} (+{lavkaFmt(g.reward)} ₽)</p>; })}
             </LavkaCard>
+          )}
+
+          {chainExamOpen(chain) && (
+            <LavkaCard tint={COLORS.blueSoft}>
+              <p className="font-semibold">🎓 Экзамен уровня 3 открыт</p>
+              <p className="text-sm mt-1">Две кухни, убыточная точка, опт, мощность — 4 задачи, оценка по решениям. Касса не меняется.</p>
+              {chain.examBest && <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Лучший результат: {Math.round(chain.examBest.eff * 100)}%{chain.examBest.medal ? " " + LAVKA_MEDALS.find((m) => m.id === chain.examBest.medal).emoji : ""} · попыток {chain.examBest.attempts}</p>}
+              <button onClick={() => setChain((c) => ({ ...c, examActive: chainExamNew(c, Math.floor(Math.random() * 2 ** 31)) }))} className="mt-3 text-sm px-4 py-2 rounded-full" style={{ background: COLORS.onyx, color: COLORS.onyxText, fontWeight: 600 }}>Сдать экзамен</button>
+            </LavkaCard>
+          )}
+          {chain.examBest && chain.examBest.medal && (
+            <LavkaCard tint={COLORS.sageSoft}><p className="text-sm">{LAVKA_MEDALS.find((m) => m.id === chain.examBest.medal).emoji} Уровень 3 сдан. Уровни 4 «Своё производство» и 5 «Холдинг» — в разработке.</p></LavkaCard>
           )}
 
           {chain.day === 1 && !rep && (
