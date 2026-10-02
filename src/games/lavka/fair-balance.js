@@ -1,53 +1,65 @@
-/* Баланс «Ярмарки» (уровень 2): node fair-balance.js [дней=30] [прогонов=30]
-   Стратегии × выбор капитала (продать лавку / оставить дочкой, медаль «серебро»).
-   Итог — капитал на конец периода + PV оставшихся дивидендов по ставке r. */
+/* Баланс «Ярмарки» (уровень 2, квас): node fair-balance.js [прогонов=40]
+   Стратегии за 21 день ярмарки. Итог — прибыль ярмарки (без капитала) и касса к концу + выкуп бочки. */
 import * as F from "./fair.js";
 import * as L from "./model.js";
 
-const DAYS = Number(process.argv[2] || 30), RUNS = Number(process.argv[3] || 30);
-const today = (st) => F.fairRivalsToday(st); // конкуренты играют Курно (или квоту картеля) — их объём известен заранее
+const RUNS = Number(process.argv[2] || 40);
+const brQ = (st) => { // наилучший ответ (реальные стаканы) на объём соперников; лидер — объём лидера
+  const k = F.fairK(st.day), cp = F.fairMC(st);
+  if (st.leader) return Math.round(F.fairStackelberg(st.rivals.length, cp, F.fairRivalMC(st.day)).xL * k);
+  if (F.fairInCartel(st)) return Math.round(F.fairCartelMath(cp, F.fairRivalMC(st.day)).qPlayer * k);
+  return Math.round(F.fairBR(F.fairRivalX(st, 0) * st.rivals.length, cp) * k);
+};
+const cheatQ = (st) => Math.round(F.fairBR(F.fairRivalX(st, 0) * st.rivals.length, F.fairMC(st)) * F.fairK(st.day));
 
 const strategies = {
-  "наилучший ответ + верность картелю + вложения": (st) => {
-    st = F.fairBuy(F.fairBuy(st, "flour"), "leader");
-    const c = F.fairMC(st);
-    if (st.cartel && st.cartel.active && st.cartel.punish === 0 && !st.leader) return { ...st, q: Math.round(F.fairCartelMath(c).qPlayer) };
-    if (st.leader) return { ...st, q: Math.round(F.fairStackelberg(st.rivals.length, c).qL) };
-    return { ...st, q: Math.round(F.fairBR(today(st), c)) };
+  "наилучший ответ, отказ от сговора, бочка на 8-й": (st) => {
+    if (st.offer) st = F.fairAnswerOffer(st, false);
+    if (st.day === 8) st = F.fairBuy(st, "barrel");
+    return { ...st, q: brQ(st) };
   },
-  "мука + верность картелю, без прилавка": (st) => {
-    st = F.fairBuy(st, "flour");
-    const c = F.fairMC(st);
-    if (st.cartel && st.cartel.active && st.cartel.punish === 0) return { ...st, q: Math.round(F.fairCartelMath(c).qPlayer) };
-    return { ...st, q: Math.round(F.fairBR(today(st), c)) };
+  "то же + утренний прилавок на 11-й": (st) => {
+    if (st.offer) st = F.fairAnswerOffer(st, false);
+    if (st.day === 8) st = F.fairBuy(st, "barrel");
+    if (st.day === 11) st = F.fairBuy(st, "leader");
+    return { ...st, q: brQ(st) };
   },
-  "наилучший ответ без вложений": (st) => {
-    if (st.cartel && st.cartel.active && st.cartel.punish === 0) return { ...st, q: Math.round(F.fairCartelMath().qCartel) };
-    return { ...st, q: Math.round(F.fairBR(today(st))) };
+  "только прилавок на 11-й": (st) => {
+    if (st.offer) st = F.fairAnswerOffer(st, false);
+    if (st.day === 11) st = F.fairBuy(st, "leader");
+    return { ...st, q: brQ(st) };
   },
-  "наилучший ответ, но обманывает картель": (st) => ({ ...st, q: Math.round(F.fairBR(today(st))) }),
-  "всегда Курно на двоих (53)": (st) => ({ ...st, q: 53 }),
-  "всегда монопольный объём (80)": (st) => ({ ...st, q: 80 }),
-  "печёт мало (20)": (st) => ({ ...st, q: 20 }),
+  "наилучший ответ, без вложений": (st) => { if (st.offer) st = F.fairAnswerOffer(st, false); return { ...st, q: brQ(st) }; },
+  "сговор, держит квоту": (st) => { if (st.offer) st = F.fairAnswerOffer(st, true); return { ...st, q: brQ(st) }; },
+  "сговор и обман": (st) => { if (st.offer) st = F.fairAnswerOffer(st, true); return { ...st, q: cheatQ(st) }; },
+  "бочка поздно (15-й)": (st) => {
+    if (st.offer) st = F.fairAnswerOffer(st, false);
+    if (st.day === 15) st = F.fairBuy(st, "barrel");
+    return { ...st, q: brQ(st) };
+  },
+  "всегда 400": (st) => ({ ...(st.offer ? F.fairAnswerOffer(st, false) : st), q: 400 }),
+  "монопольный объём 800": (st) => ({ ...(st.offer ? F.fairAnswerOffer(st, false) : st), q: 800 }),
 };
 
-function play(fn, choice, seed) {
-  const l1 = L.lavkaNewState(); l1.examBest = { eff: 0.9, medal: "silver", attempts: 1 };
-  let st = F.levelFinish(l1, choice).fair, total = 0;
+function play(fn, seed) {
+  let st = F.fairNewState(200000), total = 0;
   const rng = L.lavkaRng(seed);
-  for (let d = 0; d < DAYS; d++) { st = fn(st); const out = F.fairSimulate(st, rng); total += out.report.profit; st = out.next; }
-  const r = F.FAIR.rate;
-  const pvLeft = (st.subsidiaries || []).reduce((s, x) => s + x.dividend * (1 - (1 + r) ** -x.daysLeft) / r, 0);
-  return { total, worth: st.cash + pvLeft, chapter: st.chapter, goals: Object.keys(st.goals).length };
+  for (let d = 1; d <= F.FAIR.levelDays; d++) {
+    st = fn(st);
+    const out = F.fairSimulate(st, rng);
+    total += out.report.profit + out.report.salvage; st = out.next;
+  }
+  for (const u of F.FAIR_UPGRADES) if (st.upgrades && st.upgrades[u.id]) total -= u.cost;
+  return { total, firms: st.rivals.length + 1, goals: Object.keys(st.goals).length, fined: st.flags && st.flags.fined ? 1 : 0 };
 }
 
 const rows = [];
-for (const [name, fn] of Object.entries(strategies)) for (const choice of ["sell", "keep"]) {
-  let t = 0, w = 0, ch = 0, g = 0;
-  for (let i = 0; i < RUNS; i++) { const o = play(fn, choice, 700 + i); t += o.total; w += o.worth; ch += o.chapter; g += o.goals; }
-  rows.push({ стратегия: name, капитал: choice === "sell" ? "продать" : "дочка", "прибыль ярмарки": Math.round(t / RUNS),
-    "стоимость к концу": Math.round(w / RUNS), "глава": (ch / RUNS).toFixed(1), "целей": (g / RUNS).toFixed(1) });
+for (const [name, fn] of Object.entries(strategies)) {
+  let t = 0, n = 0, g = 0, fined = 0;
+  for (let i = 0; i < RUNS; i++) { const o = play(fn, 700 + i); t += o.total; n += o.firms; g += o.goals; fined += o.fined; }
+  rows.push({ стратегия: name, "прибыль ярмарки + выкуп − вложения": Math.round(t / RUNS), "продавцов к концу": (n / RUNS).toFixed(1),
+    "целей": (g / RUNS).toFixed(1), "штрафов": `${fined}/${RUNS}` });
 }
-rows.sort((a, b) => b["прибыль ярмарки"] - a["прибыль ярмарки"]); // главная метрика — прибыль ярмарки (без капитала и процентов)
-console.log(`Ярмарка: ${DAYS} дней, прогонов ${RUNS}; продажа лавки (серебро) = ${Math.round(F.fairSalePrice("silver"))} ₽`);
+rows.sort((a, b) => b["прибыль ярмарки + выкуп − вложения"] - a["прибыль ярмарки + выкуп − вложения"]);
+console.log(`Ярмарка: 21 день, прогонов ${RUNS}. Вложения учтены как расход в день покупки (касса), прибыль — по дням.`);
 console.table(rows);

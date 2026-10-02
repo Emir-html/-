@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { COLORS } from "../../ui/theme.js";
 import { LAVKA_MONO, lavkaRub, lavkaFmt, LAVKA_MEDALS } from "./model.js";
-import { fairFit } from "./fair.js";
+import { chainFit } from "./chain.js";
 import {
   CHAIN, CHAIN_GOALS, CHAIN_CHAPTERS, LEVEL2_DIVIDEND,
   chainMC, chainVC, chainA, chainSalePrice2, chainSetOpen, chainSimulate, chainVerdict, levelFinish2,
@@ -113,7 +113,7 @@ function ChainScreen({ st, update }) {
   const [rep, setRep] = useState(null);
   const setChain = (fn) => update((s) => ({ ...s, chain: fn(s.chain) }));
   const ch = CHAIN_CHAPTERS[chain.chapter - 1];
-  const oracle = chain.day <= CHAIN.oracleDays, fit = fairFit((chain.obs || []).filter((o) => (o.chapter || 1) === chain.chapter));
+  const oracle = chain.day <= CHAIN.oracleDays, fit = chainFit((chain.obs || []).filter((o) => (o.chapter || 1) === chain.chapter));
   const Amean = chainA(chain), Q = chain.q.reduce((s, x, i) => s + (chain.open[i] ? x : 0), 0);
   const w = chain.chapter >= 3 && Q >= CHAIN.discountQ ? CHAIN.wDiscount : CHAIN.w;
   const est = oracle ? { A: Amean, B: CHAIN.B } : fit;

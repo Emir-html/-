@@ -586,7 +586,9 @@ function lavkaExamResult(exam) {
   if (eff == null) return null;
   const days = exam.results.map((r) => r.playerMargin / r.botMargin);
   const minDay = Math.min(...days);
-  return { eff, minDay, days, medal: lavkaExamMedal(eff, minDay) };
+  /* π̄_эт — средняя дневная прибыль эталона (после постоянных издержек): от неё считается дивиденд дочки (capital.js). */
+  const piBot = exam.results.reduce((s, r) => s + (r.bot || 0), 0) / exam.results.length;
+  return { eff, minDay, days, piBot, medal: lavkaExamMedal(eff, minDay) };
 }
 
 /* Состояние лавки в i-й день экзамена: без запасов, без кассового ограничения, событие сценария.
@@ -681,7 +683,8 @@ function lavkaExamFinish(st, exam) {
   const better = eff != null && eff > prev.eff;
   return {
     ...st, examActive: null,
-    examBest: { eff: better ? eff : prev.eff, medal: better ? (medal ? medal.id : null) : prev.medal, day: better ? st.day : prev.day, attempts: (prev.attempts || 0) + 1 },
+    examBest: { eff: better ? eff : prev.eff, medal: better ? (medal ? medal.id : null) : prev.medal, piBot: better ? res.piBot : prev.piBot,
+      day: better ? st.day : prev.day, attempts: (prev.attempts || 0) + 1 },
   };
 }
 

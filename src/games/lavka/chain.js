@@ -13,7 +13,18 @@
      3. Опт и мощность (A = 300) — скидка на ВСЕ зёрна (w 20 → 14) при Q ≥ 120: прибыль сравнивают целиком,
         а не только MR и MC на краю; мощность Садовой 50 чашек. */
 import { lavkaRng, lavkaExamMedal } from "./model.js";
-import { fairFit } from "./fair.js";
+
+/* Оценка спроса игроком (МНК по наблюдениям «объём → цена»): P = Â − B̂·Q. */
+function chainFit(obs) {
+  const pts = (obs || []).slice(-20);
+  if (pts.length < 3) return null;
+  const n = pts.length, mq = pts.reduce((s, o) => s + o.Q, 0) / n, mp = pts.reduce((s, o) => s + o.P, 0) / n;
+  let sxy = 0, sxx = 0;
+  for (const o of pts) { sxy += (o.Q - mq) * (o.P - mp); sxx += (o.Q - mq) ** 2; }
+  if (sxx < 1e-6 || sxy >= 0) return null;
+  const Bh = -sxy / sxx;
+  return { A: mp + Bh * mq, B: Bh, n };
+}
 
 const CHAIN = {
   B: 1, noise: 0.05, w: 20, wDiscount: 14, discountQ: 120,
@@ -156,7 +167,7 @@ function chainSimulate(st, rng = Math.random) {
   const report = { day: st.day, q, Q, A: Areal, Amean, P, w, vc, fixed, profit, interest, dividend, reward, newGoals, newChapter,
     mr, mc, plan, open: [...st.open], closeIn: [...(st.closeIn || [0, 0])], chapter: st.chapter, mode: st.day <= CHAIN.oracleDays ? "oracle" : "estimate" };
   /* Спрос меняется от главы к главе — оцениваем только по наблюдениям текущей главы. */
-  const fit = fairFit((st.obs || []).filter((o) => (o.chapter || 1) === (st.chapter || 1)));
+  const fit = chainFit((st.obs || []).filter((o) => (o.chapter || 1) === (st.chapter || 1)));
   if (report.mode === "estimate" && fit) { report.fit = fit; report.mrEst = fit.A - 2 * fit.B * Q; }
   const next = { ...st, day: st.day + 1, chapter, open: openNext, closeIn, cash: Math.round(st.cash + profit + interest + dividend + reward), goals, subsidiaries,
     obs: [...(st.obs || []), { day: st.day, Q, P, chapter: st.chapter }].slice(-30), history: [...(st.history || []), { day: st.day, profit: Math.round(profit) }].slice(-60),
@@ -279,7 +290,7 @@ function levelFinish2(st, choice) {
 
 export {
   chainExamOpen, chainExamNew, chainExamBest, chainExamPlayDay, chainExamResult, chainExamFinish,
-  CHAIN, LEVEL2_DIVIDEND, CHAIN_GOALS, CHAIN_CHAPTERS,
+  CHAIN, LEVEL2_DIVIDEND, CHAIN_GOALS, CHAIN_CHAPTERS, chainFit,
   chainMC, chainVC, chainA, chainAllocate, chainProfitVar, chainPlan, chainShutdownMath, chainSalePrice2,
   chainNewState, chainSetOpen, chainSimulate, chainVerdict, levelFinish2, lavkaRng, lavkaExamMedal,
 };
