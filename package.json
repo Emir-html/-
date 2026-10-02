@@ -12,7 +12,8 @@
     "build:check": "vite build --mode development --outDir node_modules/.cache/check --emptyOutDir --logLevel error",
     "check": "npm run build:check && npm test",
     "exam:calibrate": "node src/games/lavka/exam-calibrate.js",
-    "balance:fair": "node src/games/lavka/fair-balance.js"
+    "balance:fair": "node src/games/lavka/fair-balance.js",
+    "balance:chain": "node src/games/lavka/chain-balance.js"
   },
   "dependencies": {
     "lucide-react": "^1.49.0",
