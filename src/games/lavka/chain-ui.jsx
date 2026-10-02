@@ -5,7 +5,7 @@ import { COLORS } from "../../ui/theme.js";
 import { LAVKA_MONO, lavkaRub, lavkaFmt, LAVKA_MEDALS } from "./model.js";
 import {
   CHAIN, CHAIN_GOALS, CHAIN_CHAPTERS, CHAIN_UPGRADES,
-  chainDay, chainMC, chainZoya, chainBuy, chainSetT, chainCloseK1, chainSimulate, chainVerdict, chainK1MinAC, chainTContribution, levelFinish2,
+  chainDay, chainMC, chainZoya, chainBuy, chainSetT, chainDecideT, chainCloseK1, chainSimulate, chainVerdict, chainK1MinAC, chainTContribution, levelFinish2,
   chainExamOpen, chainExamNew, chainExamPlayDay, chainExamResult, chainExamFinish,
 } from "./chain.js";
 import { LavkaStepper, LavkaAwning, LavkaCard, LevelFinishCapital } from "./components.jsx";
@@ -88,8 +88,8 @@ function ChainExam({ chain, setChain }) {
       <LavkaCard tint={COLORS.amberSoft}>
         <p className="font-semibold">День {i + 1}: {d.title}</p>
         <p className="text-sm mt-1">{d.text}</p>
-        <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Спрос N: Q = {String(d.nk).replace(".", ",")}·({d.nA} − 2,2·P), мест {CHAIN.cafes[0].cap + (d.terrace ? CHAIN.terrace.plus : 0)}; T: Q = {d.tA} − 2,5·P, мест 100.
-          Скидка Гены: −2 ₽ на все свои порции от 250, −3 ₽ от 350. Бариста 1 500 ₽ на кофейню, аренда Заводской 2 000 ₽.</p>
+        <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Спрос N: Q = {String(d.nk).replace(".", ",")}·({d.nA} − {d.noSemyon ? "2" : "2,2"}·P), мест {CHAIN.cafes[0].cap + (d.terrace ? CHAIN.terrace.plus : 0) + (d.extraSeats || 0)}; T: Q = {d.tA} − 2,5·P, мест 100.
+          {d.extraSeats ? ` +${d.extraSeats} уличных столиков.` : ""} Скидка Гены: −2 ₽ на все свои порции от 250, −3 ₽ от 350. Бариста 1 500 ₽ на кофейню, аренда Заводской 2 000 ₽.</p>
       </LavkaCard>
       <LavkaCard>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={v.tOpen} onChange={(e) => setV({ ...v, tOpen: e.target.checked })} /> Открыть T сегодня</label>
@@ -192,8 +192,10 @@ function ChainScreen({ st, update }) {
             </p>
             {toggles && (
               <div className="mt-2 text-sm">
-                <label className="flex items-center gap-2"><input type="checkbox" checked={chain.tOpen !== false} onChange={(e) => setChain((c) => chainSetT(c, e.target.checked))} /> Кофейня T открыта сегодня</label>
-                <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Закрыть T на день — сэкономить бариста 1 500 ₽; аренда 2 000 по договору платится в любом случае. Вклад T сегодня ≈ {lavkaRub(tC.beforeBarista)} сверх выпечки.</p>
+                {chain.tClosed ? <p className="text-xs">Кофейня T закрыта навсегда: бариста не платится, аренда 2 000 по договору — платится.</p> : (<>
+                  <label className="flex items-center gap-2"><input type="checkbox" checked={chain.tOpen !== false} onChange={(e) => setChain((c) => chainSetT(c, e.target.checked))} /> Кофейня T открыта сегодня</label>
+                  <p className="text-xs mt-1" style={{ color: COLORS.inkSoft }}>Закрыть T на день — сэкономить бариста 1 500 ₽; аренда 2 000 по договору платится в любом случае.{chain.tDecision ? ` Вклад T сегодня ≈ ${lavkaRub(tC.beforeBarista)} сверх выпечки.` : ""}</p>
+                </>)}
                 {!chain.k1Closed ? (
                   <button onClick={() => setChain((c) => chainCloseK1(c))} className="mt-2 text-sm px-3.5 py-1.5 rounded-full" style={{ border: `1px solid ${COLORS.line}`, color: COLORS.ink }}>Сдать Заводскую кухню (навсегда)</button>
                 ) : <p className="text-xs mt-1">Заводская сдана — её аренда 2 000 ₽ больше не платится.</p>}
@@ -201,6 +203,28 @@ function ChainScreen({ st, update }) {
               </div>
             )}
           </LavkaCard>
+
+          {day === CHAIN.tDecisionDay && !chain.tDecision && (
+            <LavkaCard tint={COLORS.amberSoft}>
+              <p className="font-semibold">🧾 Вера: «Отчёт по точкам». Кофейня T в минусе?</p>
+              <div className="mt-1 text-sm" style={{ fontFamily: LAVKA_MONO }}>
+                {[["Выручка (100 × 80)", "8 000"], ["Выпечка и кофе (по средней 25 ₽)", "−2 501"], ["Аренда", "−2 000"], ["Бариста", "−1 500"], ["Доля расходов кухонь", "−2 247"], ["Ремонт (40 000 на 20 дней)", "−2 000"], ["Итого", "−2 248"]].map(([l, v]) => (
+                  <div key={l} className="flex justify-between gap-2"><span>{l}</span><span>{v}</span></div>
+                ))}
+              </div>
+              <p className="text-xs mt-2" style={{ color: COLORS.inkSoft }}>«Вот что получается, если всё разложить по точкам. Вопрос — что из этого исчезнет, если закрыть». Реши сам(а), потом посмотришь расчёт.</p>
+              <div className="flex gap-2 mt-3 flex-wrap">
+                <button onClick={() => setChain((c) => chainDecideT(c, "keep"))} className="text-sm px-4 py-2 rounded-full" style={{ background: COLORS.onyx, color: COLORS.onyxText, fontWeight: 600 }}>Оставить T</button>
+                <button onClick={() => setChain((c) => chainDecideT(c, "close"))} className="text-sm px-4 py-2 rounded-full" style={{ border: `1px solid ${COLORS.line}`, color: COLORS.ink }}>Закрыть T навсегда</button>
+              </div>
+            </LavkaCard>
+          )}
+          {chain.tDecision && day === CHAIN.tDecisionDay && (
+            <LavkaCard tint={chain.tDecision.right ? COLORS.sageSoft : COLORS.rustSoft}>
+              <p className="text-sm">{chain.tDecision.right ? "Верно. " : "Неверно. "}Закрытие убирает выручку T и устранимые издержки — выпечку для T и бариста. Аренда по договору и ремонт останутся при любом решении — они невозвратные.
+                Вклад T сверх выпечки ≈ {lavkaRub(chain.tDecision.beforeBarista)} против бариста 1 500: {chain.tDecision.contribution > 0 ? `T приносит сети ≈ +${lavkaFmt(chain.tDecision.contribution)} ₽ в день.` : "T не покрывает даже бариста."}</p>
+            </LavkaCard>
+          )}
 
           {levelOver ? <LavkaCard><p className="text-sm">Месяц закончился. Дальше — экзамен.</p></LavkaCard> : (<>
             <ChainControls v={{ pN: chain.pN, pT: chain.pT, q: chain.q }} set={(v) => setChain((c) => ({ ...c, pN: v.pN, pT: v.pT, q: v.q }))}

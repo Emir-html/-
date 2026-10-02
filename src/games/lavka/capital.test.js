@@ -50,3 +50,17 @@ test("переход: без медали — null; продажа кладёт 
   const pay = K.capitalPayDividends([kept.subsidiary, { dividend: 100, daysLeft: 0 }]);
   assert.equal(pay.dividend, kept.subsidiary.dividend); assert.equal(pay.subsidiaries[0].daysLeft, 95);
 });
+
+test("калибровка: π̄_город уровней 2 и 4 — неподвижная точка лимонов на π̄_эт экзамена (≈ 0,908·π̄_эт)", async () => {
+  const F = await import("./fair.js"), P = await import("./factory.js");
+  const samples = (pi) => {
+    const out = [];
+    for (const [m, lo, hi] of [["gold", 0.95, 1], ["silver", 0.85, 0.95], ["bronze", 0.7, 0.85]])
+      for (let i = 0; i < 20; i++) out.push({ medal: m, eff: lo + ((hi - lo) * (i + 0.5)) / 20, piBot: pi });
+    return out;
+  };
+  const pi2 = F.fairExamExpectedProfit({ ...F.fairNewState(), day: 22, chapter: 3 }), pi4 = P.factoryExamExpectedProfit();
+  near(K.capitalCityFixedPoint(samples(pi2)), K.CITY_PROFIT[2], 1); near(K.capitalCityFixedPoint(samples(pi4)), K.CITY_PROFIT[4], 1);
+  /* Серебро с e = 0,9 держит выгоднее, слабая бронза (e = 0,70) — продаёт. */
+  assert.ok(K.capitalCompare(2, "silver", 0.9, pi2).keepBetter); assert.ok(!K.capitalCompare(2, "bronze", 0.7, pi2).keepBetter);
+});

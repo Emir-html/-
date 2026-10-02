@@ -67,8 +67,13 @@ test("день сети: прибыль = выручка − выпечка − 
 test("цели: MC₁ = MC₂ в неделю 1, «невозвратные» на 12-й, «долгий период» при сдаче кухни 1", () => {
   const r1 = C.chainSimulate({ ...st0(), day: 4, pN: 130, pT: 80, q: [40, 160] }, () => 0.5).report;
   assert.ok(r1.newGoals.includes("multiplant")); assert.ok(r1.newGoals.includes("makebuy")); assert.ok(r1.newGoals.includes("seats"));
-  const r12 = C.chainSimulate({ ...st0(), day: 12, chapter: 2, pN: 90, pT: 80, q: [40, 160] }, () => 0.5).report;
-  assert.ok(r12.newGoals.includes("sunk"));
+  /* «Невозвратные издержки» — только после явного решения на 12-й день (по умолчанию T открыта — этого мало). */
+  const d12 = { ...st0(), day: 12, chapter: 2, pN: 90, pT: 80, q: [40, 160] };
+  assert.ok(!C.chainSimulate(d12, () => 0.5).report.newGoals.includes("sunk"));
+  const kept = C.chainDecideT(d12, "keep");
+  assert.ok(kept.tDecision.right); assert.ok(C.chainSimulate(kept, () => 0.5).report.newGoals.includes("sunk"));
+  const closedT = C.chainDecideT(d12, "close");
+  assert.ok(!closedT.tDecision.right); assert.ok(closedT.tClosed); assert.equal(C.chainSetT(closedT, true).tOpen, false);
   const closed = C.chainCloseK1({ ...st0(), day: 14, chapter: 2 });
   assert.ok(closed.k1Closed);
   assert.ok(C.chainSimulate({ ...closed, pN: 90, q: [0, 160] }, () => 0.5).report.newGoals.includes("kitchen1"));
@@ -80,10 +85,23 @@ test("вердикт: очередь в N при низкой цене — «п�
   assert.match(v, /продешевил/); assert.match(v, /Зоя печёт за 34/);
 });
 
+test("вердикт не ругает оптимум: кухня 1 сдана (0 / 160 + Зоя) и порог скидки (70 / 180)", () => {
+  const closed = { ...st0(), day: 15, chapter: 3, k1Closed: true, pN: 90, pT: 80, q: [0, 160] };
+  assert.ok(!/Кухня могла печь дешевле/.test(C.chainVerdict(C.chainSimulate(closed, () => 0.5).report, [])));
+  const tier = C.chainVerdict(C.chainSimulate({ ...st0(), day: 8, chapter: 2, pN: 130, pT: 80, q: [70, 180] }, () => 0.5).report, []);
+  assert.ok(!/Зачем ты печёшь/.test(tier)); assert.match(tier, /ВСЕ единицы/);
+});
+
+test("цель «Новая граница» достижима и при открытой кухне 1 (оптимум 53 / 168 без Зои)", () => {
+  const p = plan(st0(), 18);
+  const r = C.chainSimulate({ ...st0(), day: 18, chapter: 3, pN: Math.round(p.PN), pT: Math.round(p.PT), q: p.q }, () => 0.5).report;
+  assert.ok(r.newGoals.includes("zoya38"), JSON.stringify(p.q));
+});
+
 /* ===== Экзамен ===== */
 const examChain = () => ({ ...st0(), day: 22, chapter: 3 });
 
-test("экзамен: 3 дня, детерминирован сидом; эталон = 100%; на практике студентов иногда T не открывать", () => {
+test("экзамен: 3 дня, детерминирован сидом; эталон = 100%; T и Заводская — решения примерно 50/50", () => {
   const c = examChain();
   assert.equal(C.chainExamOpen(c), true);
   const e = C.chainExamNew(c, 3);
@@ -92,10 +110,14 @@ test("экзамен: 3 дня, детерминирован сидом; эта�
   let ex = e;
   for (const d of e.days) ex = C.chainExamPlayDay(c, ex, C.chainExamBest(d)).exam;
   near(C.chainExamResult(ex).eff, 1, 1e-6);
-  let closedT = 0, k1 = 0;
-  for (let s = 0; s < 40; s++) { const ds = C.chainExamNew(c, 100 + s).days; if (!C.chainExamBest(ds[2]).tOpen) closedT++; if (C.chainExamBest(ds[0]).k1Open) k1++; }
-  assert.ok(closedT > 0 && closedT < 40, `T закрыта в ${closedT} из 40`);
-  assert.equal(k1, 0, "Заводскую арендовать не выгодно: min AC > цены Зои");
+  let closedT = 0, k1mon = 0, k1fest = 0;
+  for (let s = 0; s < 40; s++) {
+    const ds = C.chainExamNew(c, 100 + s).days;
+    if (!C.chainExamBest(ds[2]).tOpen) closedT++; if (C.chainExamBest(ds[0]).k1Open) k1mon++; if (C.chainExamBest(ds[1]).k1Open) k1fest++;
+  }
+  assert.ok(closedT >= 10 && closedT <= 30, `T закрыта в ${closedT} из 40 — решение не угадывается`);
+  assert.equal(k1mon, 0, "в понедельник Заводская не нужна: min AC > цены Зои");
+  assert.ok(k1fest >= 10 && k1fest <= 30, `на фестивале без Зои Заводская нужна: ${k1fest} из 40`);
 });
 
 test("экзамен: «цены как в неделю 1, обе кухни, T открыта» — без серебра", () => {

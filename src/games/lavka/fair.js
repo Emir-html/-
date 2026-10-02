@@ -88,7 +88,11 @@ function fairCheatTradeoff(cp, cr, day) {
   const cm = fairCartelMath(cp, cr), end = fairCartelEndDay(day), r = 0.02;
   const days = Math.max(0, Math.min(FAIR.punishDays, end - day - 1));
   let loss = 0;
-  for (let t = 1; t <= days; t++) loss += (cm.cartelGain * fairK(day + t)) / (1 + r) ** t;
+  /* В дни наказания MC свои: с 8-го дня сбора с единицы нет (c = 20 вместо 30). */
+  for (let t = 1; t <= days; t++) {
+    const tax = fairTax(day + t), g = fairCartelMath(cp - fairTax(day) + tax, cr - fairTax(day) + tax).cartelGain;
+    loss += (g * fairK(day + t)) / (1 + r) ** t;
+  }
   const gain = cm.cheatGain * fairK(day);
   return { gain, loss, days, end, cheatPays: gain > loss };
 }
@@ -331,7 +335,7 @@ function fairVerdict(r) {
     const m = r.cartelMath;
     const t = r.tradeoff;
     parts.push(`Договор: твоя квота ${fmt(m.qPlayer)} стаканов будня. ` + (t && t.days < FAIR.punishDays
-      ? `Обман сегодня дал бы +${fmt(t.gain)} ₽, а наказывать Семёну осталось ${t.days} дн. до распада договора (${t.end}-й день): −${fmt(t.loss)} ₽. ${t.cheatPays ? "Обман выгоден — у договора с известным концом последние дни ничем не защищены, и по обратной индукции он разваливается." : ""}`
+      ? `Обман сегодня дал бы +${fmt(t.gain)} ₽, а наказывать Семёну осталось ${t.days} дн. до распада договора (${t.end}-й день): −${fmt(t.loss)} ₽. ${t.cheatPays ? "По правилу Семёна («5 дней Курно, потом снова договор») обман сейчас выгоден: последние дни договора ничем не защищены. А если оба рассуждают до конца (обратная индукция), договор с известным концом не держится вовсе — ни в какой день." : ""}`
       : `Обман сегодня дал бы +${fmt(t ? t.gain : m.cheatGain)} ₽, но ${FAIR.punishDays} дн. Курно отнимут ${fmt(t ? t.loss : m.punishLoss)} ₽.`) +
       ` А сам договор приносит лишь ${fmt(m.cartelGain)} ₽ в будни против Курно — меньше ожидаемого штрафа p·F = ${fmt(m.expFine)} ₽ в день: сговор не окупается и без обмана.`);
   }

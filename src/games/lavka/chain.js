@@ -31,7 +31,7 @@ const CHAIN = {
   terrace: { cost: 20000, plus: 40, fromDay: 6 },
   semyonDay: 9, semyonA: 0.8, semyonB: 1.1,
   eduardDays: [10, 20], eduardSeats: 10, kiraDays: [13, 14], kiraA: 1.1,
-  togglesFromDay: 11, noise: 0.04, oracleDays: 7, examFromDay: 22, levelDays: 21,
+  togglesFromDay: 11, tDecisionDay: 12, noise: 0.04, oracleDays: 7, examFromDay: 22, levelDays: 21,
 };
 
 const chainWeekday = (day) => (day - 1) % 7;
@@ -49,7 +49,7 @@ function chainDay(st, day = st.day, ov = {}) {
       if (st.terrace) cap += CHAIN.terrace.plus;
       if (day >= CHAIN.semyonDay) { A *= CHAIN.semyonA; B *= CHAIN.semyonB; }
       if (CHAIN.kiraDays.includes(day)) A *= CHAIN.kiraA;
-      if (CHAIN.eduardDays.includes(day) && !(st.eduardAsked && st.eduardAsked === day)) cap -= CHAIN.eduardSeats;
+      if (CHAIN.eduardDays.includes(day)) cap -= CHAIN.eduardSeats;
     }
     const k = c.k[wd];
     return { ...c, A, B, cap, k, ...(ov.cafes ? ov.cafes[i] : {}) };
@@ -158,7 +158,7 @@ function chainOutcome(dd, { pN, pT, q }, aMul = [1, 1]) {
 const CHAIN_UPGRADES = [
   { id: "terrace", emoji: "☂️", title: "Терраса на Набережной (Корабельников)", cost: CHAIN.terrace.cost, fromDay: CHAIN.terrace.fromDay,
     desc: "+40 мест в кофейне N (140 → 180).",
-    lesson: "Ценность мощности = λ × прирост мест: пока N забита (λ_N = 26 в будни), терраса даёт ≈ +1 110 ₽ в день. Но λ — не навсегда: после кофейни Семёна места перестают быть дефицитом (λ_N = 0 в будни), и терраса приносит лишь ≈ +135 ₽. Инвестицию оценивают по будущим λ, а не по сегодняшней очереди." },
+    lesson: "Ценность мощности — площадь под λ(K), а не λ × прирост мест: λ падает от 26 ₽ до 0 уже на 166-м месте, поэтому в будни недели 1 терраса даёт ≈ ½·26·26 ≈ 340 ₽, в выходные — до 1 700, в среднем ≈ 780 ₽ в день. После кофейни Семёна места перестают быть дефицитом: ≈ 40–270 ₽ в день. NPV террасы за 20 000 отрицателен и без Семёна — дней мало. Инвестицию оценивают по будущим λ, а не по сегодняшней очереди." },
 ];
 const CHAIN_GOALS = [
   { id: "seats", emoji: "🪑", title: "Цена места", desc: "Когда N забита, цена в N в пределах 3 ₽ от оптимума с учётом мест (MR_N = MC + λ_N).", reward: 4000 },
@@ -183,8 +183,17 @@ function chainBuy(st, id) {
   if (!u || st[id] || st.cash < u.cost || st.day < u.fromDay) return st;
   return { ...st, cash: st.cash - u.cost, [id]: true };
 }
-/* Кофейня T на сегодня: открыть / закрыть (с 11-го дня). */
-function chainSetT(st, open) { return st.day < CHAIN.togglesFromDay ? st : { ...st, tOpen: !!open }; }
+/* Кофейня T на сегодня: открыть / закрыть (с 11-го дня; после решения «закрыть навсегда» — нельзя). */
+function chainSetT(st, open) { return st.day < CHAIN.togglesFromDay || st.tClosed ? st : { ...st, tOpen: !!open }; }
+/* Решение 12-го дня о кофейне T (после отчёта Веры): «keep» — оставить, «close» — закрыть навсегда (бариста больше
+   не платится, аренда по договору — платится). Верно — сравнить вклад T с устранимыми издержками. */
+function chainDecideT(st, choice) {
+  if (st.day !== CHAIN.tDecisionDay || st.tDecision) return st;
+  const c = chainTContribution({ ...chainDay(st), tOpen: true });
+  const right = choice === "keep" ? c.contribution > 0 : c.contribution <= 0;
+  const next = { ...st, tDecision: { choice, right, contribution: c.contribution, beforeBarista: c.beforeBarista } };
+  return choice === "close" ? { ...next, tOpen: false, tClosed: true } : next;
+}
 /* Сдать Заводскую кухню (с 11-го дня, навсегда: помесячная аренда прекращается). */
 function chainCloseK1(st) { return st.day < CHAIN.togglesFromDay || st.k1Closed ? st : { ...st, k1Closed: true, q: [0, st.q[1]] }; }
 
@@ -217,9 +226,10 @@ function chainSimulate(st, rng = Math.random) {
   /* Каждая работающая кухня печёт до MC ≈ цене Зои (кухня в упоре мощности может остановиться ниже), остальное — у Зои. */
   const atZoya = (i) => !works[i] || Math.abs(out.mc[i] - zp) <= 2 || (out.q[i] >= CHAIN.kitchens[i].cap && out.mc[i] < zp);
   if (zp != null && out.z > 0 && atZoya(0) && atZoya(1)) hit("makebuy");
-  if (st.day === 12 && dd.tOpen && chainTContribution(dd).contribution > 0) hit("sunk");
+  if (st.tDecision && st.tDecision.choice === "keep" && st.tDecision.right && !goals.sunk) hit("sunk");
   if (st.k1Closed) hit("kitchen1");
-  if (st.day >= CHAIN.zoyaRiseDay && out.z > 0 && Math.abs(m2 - CHAIN.zoyaRise) <= 2 && (!works[0] || Math.abs(m1 - CHAIN.zoyaRise) <= 2)) hit("zoya38");
+  /* Новая граница: выпуск кухонь и закупка у Зои — как в оптимуме при цене Зои 38 (±5 порций). */
+  if (st.day >= CHAIN.zoyaRiseDay && out.q.every((x, i) => Math.abs(x - plan.q[i]) <= 5) && Math.abs(out.z - plan.z) <= 5) hit("zoya38");
   let reward = 0;
   for (const id of newGoals) reward += CHAIN_GOALS.find((g) => g.id === id)?.reward || 0;
 
@@ -268,13 +278,17 @@ function chainVerdict(r, obs) {
     const hi = r.mc[0] > r.mc[1] ? 0 : 1;
     parts.push(`Одна кухня печёт дорого (MC ${CHAIN.kitchens[hi].name} = ${fmt(r.mc[hi])}), другая дёшево (${fmt(r.mc[1 - hi])}). Переложи — тот же выпуск обойдётся дешевле.`);
   }
+  /* Порог скидки Гены: своя выпечка выше цены Зои может быть верной, если дотягивает до порога (скидка на ВСЕ порции). */
+  const atTier = r.tier > 0 && (r.plan.own >= 250 || r.plan.own >= 350) && Math.abs(r.own - r.plan.own) <= 5;
   if (zp != null) {
     const over = works.map((w, i) => w && r.mc[i] > zp + 2);
-    if (over.some(Boolean)) parts.push(`Зоя печёт за ${zp}. Зачем ты печёшь за ${fmt(Math.max(...r.mc.filter((_, i) => over[i])))}? (если только не ради порога скидки Гены)`);
-    else if (r.z > 0 && works.some((w, i) => !w || r.mc[i] < zp - 2) && !(r.q[1] >= k2.cap)) parts.push(`Кухня могла печь дешевле ${zp} ₽, а ты купил(а) у Зои ${Math.round(r.z)}. Своя выпечка выгодна до MC = ${zp}.`);
+    const canBake = (i) => (i === 0 ? dd.k1Open : true) && r.q[i] < CHAIN.kitchens[i].cap; // сданная кухня не печёт
+    if (over.some(Boolean) && !atTier) parts.push(`Зоя печёт за ${zp}. Зачем ты печёшь за ${fmt(Math.max(...r.mc.filter((_, i) => over[i])))}?`);
+    else if (r.z > 0 && [0, 1].some((i) => canBake(i) && r.mc[i] < zp - 2)) parts.push(`Кухня могла печь дешевле ${zp} ₽, а ты купил(а) у Зои ${Math.round(r.z)}. Своя выпечка выгодна до MC = ${zp}.`);
   }
-  if (r.tier > 0) parts.push(`Скидка Гены ${r.tier} ₽ на все ${r.own} своих порций: −${fmt(r.tier * r.own)} ₽.`);
-  if (r.waste > 0.5) parts.push(`${Math.round(r.waste)} порций пропали непроданными.`);
+  if (r.tier > 0) parts.push(`Скидка Гены ${r.tier} ₽ на все ${r.own} своих порций: −${fmt(r.tier * r.own)} ₽.` + (atTier
+    ? ` Это скидка на ВСЕ единицы: добрать до порога выгодно, даже если MC последних порций выше цены Зои и часть пропадёт — сравнивают издержки целиком (например, 50 порций сверх 200 стоят ΔVC − скидка = 1 775 − 500 = 1 275 ₽, а 40 у Зои — 1 360).` : ""));
+  if (r.waste > 0.5) parts.push(`${Math.round(r.waste)} порций пропали непроданными${atTier ? " — следующая порция уже испечена, поэтому её MC = 0, и место у столика стоит λ = MR" : ""}.`);
   /* Решения долгого периода. */
   if (r.day >= CHAIN.togglesFromDay && !dd.k1Open) parts.push("Заводская сдана: её аренда больше не платится.");
   else if (r.day >= CHAIN.togglesFromDay) {
@@ -302,17 +316,23 @@ function chainExamNew(c, seed) {
   const rng = lavkaRng(seed), pick = (lo, hi) => lo + Math.floor(rng() * (hi - lo + 1)), u = (lo, hi) => lo + rng() * (hi - lo);
   const base = { terrace: !!c.terrace };
   const days = CHAIN_EXAM_KINDS.map((k) => {
-    const zoya = pick(32, 38);
-    let nA = CHAIN.cafes[0].A * CHAIN.semyonA * u(0.92, 1.08), nk = 1, tA = CHAIN.cafes[1].A, text;
+    let zoya = pick(32, 38), nA = CHAIN.cafes[0].A * CHAIN.semyonA * u(0.92, 1.08), nk = 1, tA = CHAIN.cafes[1].A, text, extraSeats = 0, noSemyon = false;
     if (k.kind === "monday") text = `Семён напротив. Зоя продаёт по ${zoya} ₽. Цены, выпуск кухонь — и арендовать ли Заводскую сегодня?`;
-    if (k.kind === "festival") { nk = Math.round(u(1.2, 1.45) * 100) / 100; text = `Фестиваль: на Набережной гостей ×${String(nk).replace(".", ",")}. Зоя — ${zoya} ₽. Цены и выпуск?`; }
-    if (k.kind === "practice") { tA = Math.round(CHAIN.cafes[1].A * u(0.3, 0.75)); text = `Студенты на практике: спрос T — Q = ${tA} − 2,5·P. Зоя — ${zoya} ₽. Открывать ли T сегодня?`; }
-    return { kind: k.kind, title: k.title, text, zoya, nA: Math.round(nA), nk, tA, seed: Math.floor(rng() * 2 ** 31), ...base };
+    if (k.kind === "festival") {
+      /* Семён торгует на площади, у тебя 60 уличных столиков; Зоя в половине вариантов тоже на фестивале — тогда
+         всю выпечку печёшь сам, и Заводская (min AC 50) окупается: своих 220 порций «Ковчега» не хватает. */
+      nk = Math.round(u(1.2, 1.45) * 100) / 100; nA = CHAIN.cafes[0].A; noSemyon = true; extraSeats = 60;
+      if (rng() < 0.5) zoya = null;
+      text = `Фестиваль: Семён торгует на площади, у тебя +60 уличных столиков, гостей ×${String(nk).replace(".", ",")}. ${zoya == null ? "Зоя тоже на фестивале — сегодня не возит." : `Зоя — ${zoya} ₽.`} Цены, выпуск — и нужна ли Заводская?`;
+    }
+    /* Спрос T на практике — вдали от порога ≈ 210: ошибка «открыть / закрыть» стоит денег, решение не угадывается. */
+    if (k.kind === "practice") { tA = Math.round(rng() < 0.5 ? u(100, 170) : u(250, 300)); text = `Студенты на практике: спрос T — Q = ${tA} − 2,5·P. Зоя — ${zoya} ₽. Открывать ли T сегодня?`; }
+    return { kind: k.kind, title: k.title, text, zoya, nA: Math.round(nA), nk, tA, extraSeats, noSemyon, seed: Math.floor(rng() * 2 ** 31), ...base };
   });
   return { seed, results: [], days };
 }
 function chainExamDD(d, { tOpen = true, k1Open = true } = {}) {
-  const cN = { ...CHAIN.cafes[0], A: d.nA, B: CHAIN.cafes[0].B * CHAIN.semyonB, cap: CHAIN.cafes[0].cap + (d.terrace ? CHAIN.terrace.plus : 0), k: d.nk };
+  const cN = { ...CHAIN.cafes[0], A: d.nA, B: CHAIN.cafes[0].B * (d.noSemyon ? 1 : CHAIN.semyonB), cap: CHAIN.cafes[0].cap + (d.terrace ? CHAIN.terrace.plus : 0) + (d.extraSeats || 0), k: d.nk };
   const cT = { ...CHAIN.cafes[1], A: d.tA, k: 1 };
   return { day: 22, cafes: [cN, cT], zoya: d.zoya, tiersOn: true, k1Open, tOpen };
 }
@@ -326,21 +346,26 @@ function chainExamPlayDay(c, exam, ans) {
   const a = { tOpen: ans.tOpen !== false, k1Open: ans.k1Open !== false };
   const me = chainOutcome(chainExamDD(d, a), { pN: ans.pN, pT: ans.pT, q: ans.q }, aMul);
   const best = chainExamBest(d), bot = chainOutcome(chainExamDD(d, best), best, aMul);
-  const res = { ans: { ...ans, ...a }, best, playerMargin: me.margin, botMargin: bot.margin, botProfit: bot.profit };
+  /* Дискретные решения (T, Заводская): если неверное стоит больше 1% маржи — день не выше 60%. */
+  const alt = chainBestDecision(chainExamDD(d, a));
+  const wrong = (a.tOpen !== best.tOpen || a.k1Open !== best.k1Open) && best.margin - alt.margin > 0.01 * best.margin;
+  const res = { ans: { ...ans, ...a }, best, playerMargin: me.margin, botMargin: bot.margin, botProfit: bot.profit, wrongDecision: wrong };
   return { exam: { ...exam, results: [...exam.results, res] }, result: res, done: i + 1 === exam.days.length };
 }
 function chainExamResult(exam) {
   if (!exam.results.length || exam.results.some((r) => !(r.botMargin > 0))) return null;
-  const days = exam.results.map((r) => Math.max(0, 1 - Math.sqrt(Math.max(0, 1 - Math.min(1, r.playerMargin / r.botMargin)))));
+  const days = exam.results.map((r) => Math.min(r.wrongDecision ? 0.6 : 1, Math.max(0, 1 - Math.sqrt(Math.max(0, 1 - Math.min(1, r.playerMargin / r.botMargin))))));
   const eff = days.reduce((s, x) => s + x, 0) / days.length, minDay = Math.min(...days);
-  const piBot = exam.results.reduce((s, r) => s + r.botProfit, 0) / exam.results.length;
-  return { eff, minDay, days, piBot, medal: lavkaExamMedal(eff, minDay) };
+  return { eff, minDay, days, medal: lavkaExamMedal(eff, minDay) };
 }
+/* π̄_эт уровня 3 — матожидание прибыли эталона по распределению экзамена (60 сидов; считать дорого — константа,
+   пересчёт: node src/games/lavka/capital-calibrate.js). Зависит только от террасы. */
+const CHAIN_EXAM_PI = { false: 5091, true: 5138 };
 function chainExamFinish(c, exam) {
   const res = chainExamResult(exam), prev = c.examBest || { eff: -Infinity, medal: null, attempts: 0 };
   const better = !!res && res.eff > prev.eff;
   return { ...c, examActive: null, examBest: { eff: better ? res.eff : prev.eff, medal: better ? (res.medal ? res.medal.id : null) : prev.medal,
-    piBot: better ? res.piBot : prev.piBot, day: better ? c.day : prev.day, attempts: (prev.attempts || 0) + 1 } };
+    piBot: CHAIN_EXAM_PI[!!c.terrace], day: better ? c.day : prev.day, attempts: (prev.attempts || 0) + 1 } };
 }
 
 /* Завершить уровень 2 (нужна медаль экзамена ярмарки): продать квасную точку или оставить дочкой; дочки копятся. */
@@ -353,9 +378,9 @@ function levelFinish2(st, choice) {
 }
 
 export {
-  CHAIN, CHAIN_UPGRADES, CHAIN_GOALS, CHAIN_CHAPTERS, CHAIN_EXAM_KINDS,
+  CHAIN, CHAIN_UPGRADES, CHAIN_GOALS, CHAIN_CHAPTERS, CHAIN_EXAM_KINDS, CHAIN_EXAM_PI,
   chainVC, chainMC, chainZoya, chainTier, chainDay, chainPriceFor, chainDemand, chainOwnCost, chainCostTable, chainPlan, chainLambda,
-  chainBestDecision, chainK1MinAC, chainTContribution, chainOutcome, chainNewState, chainBuy, chainSetT, chainCloseK1, chainFit,
+  chainBestDecision, chainK1MinAC, chainTContribution, chainOutcome, chainNewState, chainBuy, chainSetT, chainDecideT, chainCloseK1, chainFit,
   chainSimulate, chainVerdict, chainExamOpen, chainExamNew, chainExamDD, chainExamBest, chainExamPlayDay, chainExamResult, chainExamFinish,
   levelFinish2, lavkaRng, lavkaExamMedal,
 };
